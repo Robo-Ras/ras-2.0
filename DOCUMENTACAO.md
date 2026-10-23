@@ -480,7 +480,7 @@ Projeto React + TypeScript + Vite + Tailwind + shadcn/ui (o mesmo gerado pelo Lo
 
 ### Painel principal
 
-Tema escuro. Em telas largas, os sensores ficam à esquerda e os controles à direita. No tablet, os controles vão para baixo em duas colunas e, no celular, em uma.
+Tema claro ou escuro: na primeira visita segue o tema do sistema; o botão de sol/lua na barra do topo troca, e a escolha fica salva no navegador. Em telas largas, os sensores ficam à esquerda e os controles à direita. No tablet, os controles vão para baixo em duas colunas e, no celular, em uma.
 
 - **Barra do topo (fixa)**: servidor, Arduino (porta), LiDAR 2D, C270, D435 e modo (manual/autônomo, andando/parado). Bolinha verde = ok, amarela = esperando, cinza = desligado. O botão **PARAR** fica sempre visível: para os motores e desliga o modo autônomo.
 - **Mapa de pontos do LiDAR 2D**: vista de cima, frente para cima. Os pontos são coloridos pela distância (vermelho < 0,5 m, âmbar < 1 m, ciano mais longe). Os setores da navegação aparecem em verde ou vermelho. Tem zoom de 2/4/8 m e a opção **Rastro**, que mantém os últimos ~1 s de leituras. Embaixo: quantidade de pontos, taxa de atualização, ponto mais perto (distância e ângulo) e caminho livre à frente. Sem leituras, o painel mostra **"Aguardando o LiDAR 2D"** com a dica do que fazer.

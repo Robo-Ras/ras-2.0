@@ -33,7 +33,7 @@ const Row = ({ title, source, data }: { title: string; source: string; data?: Ob
             }`}
           >
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-            <div className={`tabular text-base font-semibold ${blocked ? "text-red-400" : ""}`}>
+            <div className={`tabular text-base font-semibold ${blocked ? "text-red-600 dark:text-red-400" : ""}`}>
               {dist !== undefined && dist < 9.9 ? `${dist.toFixed(2)} m` : data ? "livre" : "—"}
             </div>
           </div>

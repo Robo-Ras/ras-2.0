@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
-import { OctagonX } from "lucide-react";
+import { Moon, OctagonX, Sun } from "lucide-react";
 
 export interface SensorInfo {
   online: boolean;
@@ -43,6 +45,20 @@ interface StatusBarProps {
   onEmergencyStop: () => void;
 }
 
+const ThemeToggle = () => {
+  const { resolvedTheme, setTheme } = useTheme();
+  // O tema só é conhecido depois de montar (vem do localStorage/sistema)
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const dark = mounted && resolvedTheme === "dark";
+  const label = dark ? "Mudar para o tema claro" : "Mudar para o tema escuro";
+  return (
+    <Button variant="outline" size="icon" onClick={() => setTheme(dark ? "light" : "dark")} aria-label={label} title={label}>
+      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </Button>
+  );
+};
+
 const sensorDetail = (info?: SensorInfo, fallback = "Desconectado") => {
   if (!info?.online) return fallback;
   return info.kind === "sim" ? `${info.name ?? "OK"} (sim)` : info.name ?? "OK";
@@ -60,7 +76,7 @@ export const StatusBar = ({
   const sensor = (info?: SensorInfo): Tone => (!isConnected ? "off" : info?.online ? "ok" : "warn");
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/85 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3">
         <div className="mr-2">
           <div className="text-lg font-bold tracking-tight">RAS 2.0</div>
@@ -87,6 +103,8 @@ export const StatusBar = ({
             detail={`${autonomousMode ? "Autônomo" : "Manual"} · ${robotMoving ? "andando" : "parado"}`}
           />
         </div>
+
+        <ThemeToggle />
 
         <Button
           variant="destructive"

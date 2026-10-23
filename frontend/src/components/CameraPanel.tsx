@@ -51,7 +51,7 @@ const CameraView = ({
         {image ? (info?.kind === "sim" ? "SIMULADA" : "AO VIVO") : "AGUARDANDO"}
       </Badge>
     </div>
-    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-black">
+    <div className={`relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border ${image ? "bg-black" : "bg-muted/60"}`}>
       {image ? (
         <>
           <img src={`data:image/jpeg;base64,${image}`} alt={`Imagem da ${title}`} className="h-full w-full object-contain" />

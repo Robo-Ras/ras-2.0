@@ -299,7 +299,7 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
         )}
 
         {micPermission === 'denied' && (
-          <p className="text-xs text-red-400">Microfone bloqueado: libere nas configurações do navegador.</p>
+          <p className="text-xs text-red-600 dark:text-red-400">Microfone bloqueado: libere nas configurações do navegador.</p>
         )}
 
         <p className="text-xs text-muted-foreground">

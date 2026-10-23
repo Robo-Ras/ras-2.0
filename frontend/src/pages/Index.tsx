@@ -242,7 +242,7 @@ const Index = () => {
       <main className="mx-auto max-w-[1600px] px-4 py-4">
         {!isConnected && (
           <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-            <span className="font-semibold text-amber-300">Backend desconectado.</span>{" "}
+            <span className="font-semibold text-amber-700 dark:text-amber-300">Backend desconectado.</span>{" "}
             <span className="text-muted-foreground">
               Rode <code className="rounded bg-muted px-1">./start.sh</code> (ou <code className="rounded bg-muted px-1">./start.sh --sim</code> sem o robô).
               Tentando reconectar a cada 3 s...

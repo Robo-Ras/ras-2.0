@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Radar } from "lucide-react";
+import { useTheme } from "next-themes";
 import type { SensorInfo } from "@/components/StatusBar";
 
 export interface LidarScan {
@@ -37,8 +38,33 @@ const RANGES = [2, 4, 8];
 const TRAIL_SCANS = 12; // quantos scans antigos ficam no "rastro" (~1 s)
 const CANVAS = 720;
 
-// Cor do ponto pela distância: perto = vermelho, médio = âmbar, longe = ciano
-const pointColor = (r: number) => (r < 0.5 ? "248,113,113" : r < 1.0 ? "251,191,36" : "45,212,191");
+// Cores do canvas por tema. Pontos pela distância: perto = vermelho, médio = âmbar, longe = ciano
+const PALETTE = {
+  dark: {
+    bgInner: "#0c1a2b",
+    bgOuter: "#050b14",
+    grid: "148,163,184",
+    text: "rgba(148,163,184,0.85)",
+    near: "248,113,113",
+    mid: "251,191,36",
+    far: "45,212,191",
+    robot: "#38bdf8",
+    robotOff: "#475569",
+    arrow: "#ffffff",
+  },
+  light: {
+    bgInner: "#ffffff",
+    bgOuter: "#e8eef5",
+    grid: "71,85,105",
+    text: "rgba(51,65,85,0.85)",
+    near: "220,38,38",
+    mid: "217,119,6",
+    far: "13,148,136",
+    robot: "#0284c7",
+    robotOff: "#94a3b8",
+    arrow: "#ffffff",
+  },
+};
 
 export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }: Lidar2DViewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,6 +73,8 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
   const [maxRange, setMaxRange] = useState(4);
   const [trail, setTrail] = useState(false);
   const [rate, setRate] = useState(0);
+  const { resolvedTheme } = useTheme();
+  const pal = PALETTE[resolvedTheme === "light" ? "light" : "dark"];
 
   const live = backendConnected && !!scan && scan.angles.length > 0;
 
@@ -97,8 +125,8 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
 
     ctx.clearRect(0, 0, size, size);
     const bg = ctx.createRadialGradient(c, c, 0, c, c, c * 1.1);
-    bg.addColorStop(0, "#0c1a2b");
-    bg.addColorStop(1, "#050b14");
+    bg.addColorStop(0, pal.bgInner);
+    bg.addColorStop(1, pal.bgOuter);
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, size, size);
 
@@ -118,7 +146,7 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
     }
 
     // grade: anéis de distância e raios a cada 30°
-    ctx.strokeStyle = "rgba(148,163,184,0.16)";
+    ctx.strokeStyle = `rgba(${pal.grid},0.16)`;
     ctx.lineWidth = 1;
     for (let deg = 0; deg < 360; deg += 30) {
       const [x, y] = toXY(deg, maxRange);
@@ -127,17 +155,17 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
       ctx.lineTo(x, y);
       ctx.stroke();
     }
-    ctx.fillStyle = "rgba(148,163,184,0.75)";
+    ctx.fillStyle = pal.text;
     ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
     const ringStep = maxRange <= 2 ? 0.5 : 1;
     for (let r = ringStep; r <= maxRange + 1e-6; r += ringStep) {
-      ctx.strokeStyle = Number.isInteger(r) ? "rgba(148,163,184,0.32)" : "rgba(148,163,184,0.16)";
+      ctx.strokeStyle = `rgba(${pal.grid},${Number.isInteger(r) ? 0.32 : 0.16})`;
       ctx.beginPath();
       ctx.arc(c, c, r * scale, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillText(`${r} m`, c + 4, c - r * scale + 14);
     }
-    ctx.fillStyle = "rgba(148,163,184,0.9)";
+    ctx.fillStyle = pal.text;
     ctx.textAlign = "center";
     ctx.fillText("FRENTE", c, 13);
     ctx.textAlign = "start";
@@ -153,7 +181,7 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
           const r = s.ranges[i];
           if (!r || r > maxRange) return;
           const [x, y] = toXY(deg, r);
-          ctx.fillStyle = `rgba(${pointColor(r)},${alpha})`;
+          ctx.fillStyle = `rgba(${r < 0.5 ? pal.near : r < 1.0 ? pal.mid : pal.far},${alpha})`;
           ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
         });
       });
@@ -161,18 +189,18 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
 
     // robô (raio ~0.2 m) e seta da frente
     const robotR = Math.max(6, 0.2 * scale);
-    ctx.fillStyle = live ? "#38bdf8" : "#475569";
+    ctx.fillStyle = live ? pal.robot : pal.robotOff;
     ctx.beginPath();
     ctx.arc(c, c, robotR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#ffffff";
+    ctx.strokeStyle = pal.arrow;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(c, c);
     ctx.lineTo(c, c - robotR - 10);
     ctx.stroke();
     ctx.lineWidth = 1;
-  }, [scan, groundObstacles, maxRange, trail, live]);
+  }, [scan, groundObstacles, maxRange, trail, live, pal]);
 
   const status = !backendConnected
     ? { badge: "SEM BACKEND", variant: "secondary" as const }
@@ -255,9 +283,9 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
-              <Legend color="bg-red-400" label="< 0,5 m" />
-              <Legend color="bg-amber-400" label="< 1 m" />
-              <Legend color="bg-teal-400" label="longe" />
+              <Legend color="bg-red-600 dark:bg-red-400" label="< 0,5 m" />
+              <Legend color="bg-amber-600 dark:bg-amber-400" label="< 1 m" />
+              <Legend color="bg-teal-600 dark:bg-teal-400" label="longe" />
             </div>
             <div className="flex gap-1">
               {RANGES.map((r) => (
