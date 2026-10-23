@@ -3,6 +3,8 @@
 Sistema de controle e navegação autônoma para robô omnidirecional de 3 rodas.
 Frontend (React/Vite) e backend (Python) rodam juntos no notebook, sem depender do Lovable.
 
+📖 Documentação completa (arquitetura, sensores, navegação, protocolo, testes): [DOCUMENTACAO.md](DOCUMENTACAO.md)
+
 ![RAS-Imagem](https://github.com/user-attachments/assets/fb7c15bb-2333-40f6-87b7-962a2bd71497)
 
 ## Hardware
