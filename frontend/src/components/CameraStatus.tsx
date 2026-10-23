@@ -1,104 +1,82 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Video, VideoOff } from "lucide-react";
+import { Camera, Radar, Video, VideoOff } from "lucide-react";
+
+export interface SensorInfo {
+  online: boolean;
+  name?: string;
+  kind?: string; // usb | realsense | ld06 | rplidar | sim
+  port?: string | null;
+}
+
+export interface SensorsStatus {
+  camera?: SensorInfo;
+  l515?: SensorInfo;
+  lidar?: SensorInfo;
+}
 
 interface CameraStatusProps {
-  lidarOnline?: boolean;
-  d435Online?: boolean;
+  sensors?: SensorsStatus;
   yoloEnabled?: boolean;
   trackingMode?: string;
 }
 
-export const CameraStatus = ({ 
-  lidarOnline = false, 
-  d435Online = false,
-  yoloEnabled = false,
-  trackingMode = "basic"
-}: CameraStatusProps) => {
+const SensorRow = ({ label, info, lidar }: { label: string; info?: SensorInfo; lidar?: boolean }) => {
+  const online = !!info?.online;
+  const Icon = lidar ? Radar : online ? Video : VideoOff;
+  const detail = [info?.name && info.name !== label ? info.name : null, info?.port && info.port !== "SIM" ? info.port : null]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon className={`h-4 w-4 shrink-0 ${online ? "text-green-500" : "text-gray-400"}`} />
+        <span className="font-medium">{label}</span>
+        {detail && <span className="text-xs text-muted-foreground truncate">{detail}</span>}
+        {info?.kind === "sim" && <Badge variant="outline" className="text-xs">simulado</Badge>}
+      </div>
+      <Badge variant={online ? "default" : "secondary"}>{online ? "ONLINE" : "OFFLINE"}</Badge>
+    </div>
+  );
+};
+
+export const CameraStatus = ({ sensors, yoloEnabled = false, trackingMode = "basic" }: CameraStatusProps) => {
+  const anyCamera = sensors?.camera?.online || sensors?.l515?.online;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <Camera className="h-5 w-5" />
-          Status das Câmeras
+          Status dos Sensores
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {/* Status do Sistema */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${
-                yoloEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-              }`} />
-              <span className="font-medium">Sistema de Tracking</span>
-            </div>
-            <Badge variant={yoloEnabled ? "default" : "secondary"}>
-              {yoloEnabled ? "ATIVO" : "INATIVO"}
-            </Badge>
-          </div>
+          <SensorRow label="Câmera C270" info={sensors?.camera} />
+          <SensorRow label="LiDAR 2D" info={sensors?.lidar} lidar />
+          <SensorRow label="RealSense L515" info={sensors?.l515} />
 
-          {/* LiDAR L515 */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center gap-2">
-              {lidarOnline ? (
-                <Video className="h-4 w-4 text-green-500" />
-              ) : (
-                <VideoOff className="h-4 w-4 text-gray-400" />
-              )}
-              <span className="font-medium">LiDAR L515</span>
-            </div>
-            <Badge variant={lidarOnline ? "default" : "secondary"}>
-              {lidarOnline ? "ONLINE" : "OFFLINE"}
-            </Badge>
-          </div>
-
-          {/* Câmera D435 */}
-          <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <div className="flex items-center gap-2">
-              {d435Online ? (
-                <Video className="h-4 w-4 text-green-500" />
-              ) : (
-                <VideoOff className="h-4 w-4 text-gray-400" />
-              )}
-              <span className="font-medium">Câmera D435</span>
-            </div>
-            <Badge variant={d435Online ? "default" : "secondary"}>
-              {d435Online ? "ONLINE" : "OFFLINE"}
-            </Badge>
-          </div>
-
-          {/* Modo de Tracking */}
           <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
             <span className="font-medium text-sm">Modo de Tracking</span>
-            <Badge variant="outline">
-              {trackingMode === "yolo" ? "YOLO" : 
-               trackingMode === "basic" ? "Básico" : 
+            <Badge variant={yoloEnabled ? "default" : "outline"}>
+              {trackingMode === "yolo" ? "YOLO" :
+               trackingMode === "basic" ? "Básico" :
                trackingMode === "error" ? "Erro" : "Aguardando"}
             </Badge>
           </div>
 
-          {/* Mensagem de Status */}
-          {!yoloEnabled && (
+          {!sensors && (
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm">
               <p className="text-blue-600 dark:text-blue-400">
-                💡 Ative o "YOLO Tracking" acima para iniciar as câmeras
+                💡 Aguardando o backend. Rode ./start.sh (ou ./start.sh --sim sem o robô)
               </p>
             </div>
           )}
 
-          {yoloEnabled && !lidarOnline && !d435Online && (
+          {sensors && !anyCamera && !sensors.lidar?.online && (
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm">
               <p className="text-yellow-600 dark:text-yellow-400">
-                ⚠️ Nenhuma câmera detectada. Verifique as conexões USB.
-              </p>
-            </div>
-          )}
-
-          {yoloEnabled && (lidarOnline || d435Online) && (
-            <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-sm">
-              <p className="text-green-600 dark:text-green-400">
-                ✓ {lidarOnline && d435Online ? "Ambas" : "Uma"} câmera(s) operacional(is)
+                ⚠️ Nenhum sensor detectado. Verifique as conexões USB.
               </p>
             </div>
           )}

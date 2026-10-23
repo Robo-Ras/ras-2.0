@@ -86,7 +86,7 @@ export const AutonomousControl = ({
                 Modo Autônomo
               </Label>
               <p className="text-sm text-muted-foreground">
-                O robô desviará automaticamente de objetos detectados pela câmera
+                O robô desviará automaticamente dos obstáculos detectados pelos sensores
               </p>
             </div>
             <Switch
@@ -110,7 +110,7 @@ export const AutonomousControl = ({
                   <div className="flex-1">
                     <div className="font-semibold">Navegação Autônoma Ativa</div>
                     <div className="text-sm text-muted-foreground">
-                      Detectando objetos com câmera D435 e desviando
+                      Desviando de obstáculos com LiDAR 2D e câmera
                     </div>
                     
                     {/* Navigation Status */}
@@ -126,6 +126,8 @@ export const AutonomousControl = ({
                             {navigationStatus.direction === 'left' && '↩ Esquerda'}
                             {navigationStatus.direction === 'right' && '↪ Direita'}
                             {navigationStatus.direction === 'stop' && '⏸ Parado'}
+                            {navigationStatus.direction === 'rotate_left' && '↺ Girando à esquerda'}
+                            {navigationStatus.direction === 'rotate_right' && '↻ Girando à direita'}
                           </Badge>
                         </div>
                         

@@ -10,6 +10,7 @@ interface MultiCameraViewProps {
   trackingMode?: string;
   yoloEnabled?: boolean;
   onToggleYolo?: (enabled: boolean) => void;
+  cameraLabel?: string;
 }
 
 export const MultiCameraView = ({ 
@@ -18,7 +19,8 @@ export const MultiCameraView = ({
   trackedObjects = [],
   trackingMode = "basic",
   yoloEnabled = false,
-  onToggleYolo
+  onToggleYolo,
+  cameraLabel = "Câmera C270",
 }: MultiCameraViewProps) => {
   return (
     <div className="space-y-4">
@@ -51,12 +53,13 @@ export const MultiCameraView = ({
       </Card>
 
       {/* Grid de Câmeras */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Câmera L515 (LiDAR) */}
+      <div className={`grid grid-cols-1 gap-4 ${lidarImage ? "lg:grid-cols-2" : ""}`}>
+        {/* RealSense L515 (opcional, só aparece se estiver conectada) */}
+        {lidarImage && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-lg">
-              <span>LiDAR L515</span>
+              <span>RealSense L515</span>
               <Badge variant={lidarImage ? "default" : "secondary"}>
                 {lidarImage ? "ONLINE" : "OFFLINE"}
               </Badge>
@@ -78,12 +81,13 @@ export const MultiCameraView = ({
             )}
           </CardContent>
         </Card>
+        )}
 
-        {/* Câmera D435 */}
+        {/* Câmera principal (C270) */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-lg">
-              <span>Câmera D435</span>
+              <span>{cameraLabel}</span>
               <Badge variant={d435Image ? "default" : "secondary"}>
                 {d435Image ? "ONLINE" : "OFFLINE"}
               </Badge>
@@ -94,13 +98,13 @@ export const MultiCameraView = ({
               <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
                 <img
                   src={`data:image/jpeg;base64,${d435Image}`}
-                  alt="D435 Camera Feed"
+                  alt="Camera Feed"
                   className="w-full h-full object-contain"
                 />
               </div>
             ) : (
               <div className="w-full aspect-video bg-muted rounded-lg flex items-center justify-center">
-                <p className="text-muted-foreground">Aguardando dados da D435...</p>
+                <p className="text-muted-foreground">Aguardando imagem da câmera...</p>
               </div>
             )}
           </CardContent>
@@ -132,10 +136,10 @@ export const MultiCameraView = ({
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    {obj.depth && (
+                    {obj.depth > 0 && (
                       <span>Dist: {obj.depth.toFixed(2)}m</span>
                     )}
-                    {obj.confidence && (
+                    {obj.confidence > 0 && (
                       <span>Conf: {(obj.confidence * 100).toFixed(0)}%</span>
                     )}
                   </div>

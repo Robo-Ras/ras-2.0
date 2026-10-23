@@ -4,24 +4,26 @@ import MotorSpeedControl from "@/components/MotorSpeedControl";
 import VoiceControl from "@/components/VoiceControl";
 import { SensorVisualization } from "@/components/SensorVisualization";
 import { MultiCameraView } from "@/components/MultiCameraView";
-import { CameraStatus } from "@/components/CameraStatus";
+import { CameraStatus, type SensorsStatus } from "@/components/CameraStatus";
+import { Lidar2DView, type LidarScan } from "@/components/Lidar2DView";
 import { AutonomousControl } from "@/components/AutonomousControl";
 import { SerialConnectionControl } from "@/components/SerialConnectionControl";
 import { ArduinoTroubleshooting } from "@/components/ArduinoTroubleshooting";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { getWsUrl } from "@/lib/ws";
 
 const Index = () => {
   const [lastCommand, setLastCommand] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
   const [isArduinoConnected, setIsArduinoConnected] = useState(false);
+  const [arduinoPort, setArduinoPort] = useState<string | null>(null);
   const [autonomousMode, setAutonomousMode] = useState(false);
   const [autonomousSpeed, setAutonomousSpeed] = useState(100);
   const [cameraImage, setCameraImage] = useState<string>();
-  const [lidarImage, setLidarImage] = useState<string>();
-  const [d435Image, setD435Image] = useState<string>();
-  const [lidarOnline, setLidarOnline] = useState(false);
-  const [d435Online, setD435Online] = useState(false);
+  const [l515Image, setL515Image] = useState<string>();
+  const [sensorsStatus, setSensorsStatus] = useState<SensorsStatus>();
+  const [lidarScan, setLidarScan] = useState<LidarScan>();
   const [groundObstacles, setGroundObstacles] = useState<any>();
   const [heightObstacles, setHeightObstacles] = useState<any>();
   const [trackedObjects, setTrackedObjects] = useState<any>();
@@ -35,8 +37,9 @@ const Index = () => {
   // WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      console.log('🌐 Tentando conectar ao servidor Python em ws://localhost:8765');
-      const ws = new WebSocket('ws://localhost:8765');
+      const wsUrl = getWsUrl();
+      console.log(`🌐 Tentando conectar ao servidor Python em ${wsUrl}`);
+      const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         console.log('✓✓✓ CONECTADO ao servidor Python com sucesso!');
@@ -52,37 +55,18 @@ const Index = () => {
         console.log('📩 Mensagem recebida do servidor:', data.type);
         
         if (data.type === 'sensor_data') {
-          // Imagens de múltiplas câmeras
-          if (data.camera_image) {
-            setCameraImage(data.camera_image);
-            setD435Image(data.camera_image); // D435 principal
-            setD435Online(true);
-          }
-          if (data.l515_image) {
-            setLidarImage(data.l515_image);
-            setLidarOnline(true);
-          }
-          if (data.d435_image) {
-            setD435Image(data.d435_image);
-            setD435Online(true);
-          }
-          
-          // Atualiza status das câmeras baseado nas imagens recebidas
-          if (!data.l515_image) setLidarOnline(false);
-          if (!data.d435_image && !data.camera_image) setD435Online(false);
-          
+          // Imagens: câmera principal (C270) e L515 opcional
+          setCameraImage(data.camera_image);
+          setL515Image(data.l515_image);
+          setSensorsStatus(data.sensors_status);
+          setLidarScan(data.lidar_scan);
+
           // Dados de obstáculos
-          if (data.ground_obstacles) {
-            setGroundObstacles(data.ground_obstacles);
-          }
-          if (data.height_obstacles) {
-            setHeightObstacles(data.height_obstacles);
-          }
-          
+          setGroundObstacles(data.ground_obstacles);
+          setHeightObstacles(data.height_obstacles);
+
           // Tracking
-          if (data.tracked_objects) {
-            setTrackedObjects(data.tracked_objects);
-          }
+          setTrackedObjects(data.tracked_objects || []);
           if (data.tracking_mode) {
             setTrackingMode(data.tracking_mode);
           }
@@ -97,15 +81,20 @@ const Index = () => {
         } else if (data.type === 'serial_status') {
           console.log('✅ Status serial atualizado:', data.connected, data.port);
           setIsArduinoConnected(data.connected);
-          if (data.connected) {
+          setArduinoPort(data.port ?? null);
+          if (data.connected && !data.initial) {
             toast({
               title: "Arduino Conectado",
               description: `Conectado na porta ${data.port}`,
             });
           }
+        } else if (data.type === 'autonomous_status') {
+          setAutonomousMode(data.enabled);
         } else if (data.type === 'yolo_status') {
           setYoloEnabled(data.enabled);
-          if (data.error) {
+          if (data.initial) {
+            // estado inicial enviado ao conectar, sem aviso
+          } else if (data.error) {
             toast({
               title: "Erro YOLO",
               description: data.error,
@@ -114,7 +103,7 @@ const Index = () => {
           } else if (data.enabled) {
             toast({
               title: "YOLO Ativado",
-              description: "Sistema de tracking avançado ativo",
+              description: "Detectando objetos com a câmera",
             });
           } else {
             toast({
@@ -139,17 +128,22 @@ const Index = () => {
       ws.onclose = () => {
         console.log('✗ Desconectado do servidor Python');
         setIsConnected(false);
+        if (closedByPage) return;
         // Tentar reconectar após 3 segundos
         console.log('⏳ Tentando reconectar em 3 segundos...');
-        setTimeout(connectWebSocket, 3000);
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
       };
       
       wsRef.current = ws;
     };
     
+    let closedByPage = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     connectWebSocket();
     
     return () => {
+      closedByPage = true;
+      clearTimeout(reconnectTimer);
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -240,7 +234,7 @@ const Index = () => {
             <span className="font-semibold">Servidor Python</span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {isConnected ? 'Conectado (WebSocket)' : 'Desconectado - Execute robot_autonomous_control.py'}
+            {isConnected ? 'Conectado (WebSocket)' : 'Desconectado - Execute ./start.sh'}
           </p>
         </div>
 
@@ -251,7 +245,7 @@ const Index = () => {
             <span className="font-semibold">Arduino</span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {isArduinoConnected ? 'Conectado' : 'Aguardando conexão'}
+            {isArduinoConnected ? `Conectado${arduinoPort ? ` em ${arduinoPort}` : ''}${arduinoPort === 'SIM' ? ' (simulado)' : ''}` : 'Aguardando conexão'}
           </p>
         </div>
       </div>
@@ -262,6 +256,7 @@ const Index = () => {
           wsRef={wsRef}
           isArduinoConnected={isArduinoConnected}
           availablePorts={availablePorts}
+          connectedPort={arduinoPort}
           onConnectionChange={setIsArduinoConnected}
         />
         
@@ -302,25 +297,33 @@ const Index = () => {
       <div className="mb-6 space-y-6">
         {/* Status das Câmeras */}
         <CameraStatus
-          lidarOnline={lidarOnline}
-          d435Online={d435Online}
+          sensors={sensorsStatus}
           yoloEnabled={yoloEnabled}
           trackingMode={trackingMode}
         />
 
         {/* Visualização com Múltiplas Câmeras */}
         <MultiCameraView
-          lidarImage={lidarImage}
-          d435Image={d435Image}
+          lidarImage={l515Image}
+          d435Image={cameraImage}
+          cameraLabel={sensorsStatus?.camera?.kind === 'sim' ? 'Câmera simulada' : 'Câmera C270'}
           trackedObjects={trackedObjects}
           trackingMode={trackingMode}
           yoloEnabled={yoloEnabled}
           onToggleYolo={handleToggleYolo}
         />
 
+        {/* LiDAR 2D */}
+        <Lidar2DView
+          scan={lidarScan}
+          groundObstacles={groundObstacles}
+          sensorName={sensorsStatus?.lidar?.name ? `LiDAR 2D · ${sensorsStatus.lidar.name}` : 'LiDAR 2D'}
+          online={sensorsStatus?.lidar?.online}
+        />
+
         {/* Visualização de Sensores (versão simplificada) */}
         <SensorVisualization
-          cameraImage={cameraImage || d435Image}
+          cameraImage={cameraImage}
           groundObstacles={groundObstacles}
           heightObstacles={heightObstacles}
           trackedObjects={trackedObjects}

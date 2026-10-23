@@ -9,24 +9,40 @@ interface SerialConnectionControlProps {
   wsRef: React.RefObject<WebSocket | null>;
   isArduinoConnected: boolean;
   availablePorts: string[];
+  connectedPort?: string | null;
   onConnectionChange: (connected: boolean) => void;
 }
+
+const FALLBACK_PORTS = ["ttyUSB0", "ttyUSB1", "ttyACM0", "ttyACM1"];
+
+// "ttyUSB0" vira "/dev/ttyUSB0"; caminhos completos e "SIM" (simulador) ficam iguais
+const toFullPort = (port: string) => (port.startsWith("tty") ? `/dev/${port}` : port);
 
 export const SerialConnectionControl = ({
   wsRef,
   isArduinoConnected,
   availablePorts,
+  connectedPort,
   onConnectionChange,
 }: SerialConnectionControlProps) => {
   const [selectedPort, setSelectedPort] = useState<string>("ttyUSB0");
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
 
+  const ports = availablePorts.length > 0 ? availablePorts : FALLBACK_PORTS;
+
   useEffect(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'discover_ports' }));
     }
   }, [wsRef]);
+
+  // Quando o backend manda a lista de portas, seleciona a primeira se a atual não existir
+  useEffect(() => {
+    if (availablePorts.length > 0 && !availablePorts.includes(selectedPort)) {
+      setSelectedPort(availablePorts[0]);
+    }
+  }, [availablePorts, selectedPort]);
 
   const handleRefreshPorts = () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -50,11 +66,8 @@ export const SerialConnectionControl = ({
     setIsConnecting(true);
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // Adiciona /dev/ se não estiver presente
-      const fullPort = selectedPort.startsWith('/dev/') 
-        ? selectedPort 
-        : `/dev/${selectedPort}`;
-      
+      const fullPort = toFullPort(selectedPort);
+
       console.log(`🔌 Tentando conectar ao Arduino na porta: ${fullPort}`);
       
       wsRef.current.send(JSON.stringify({
@@ -81,10 +94,8 @@ export const SerialConnectionControl = ({
   };
 
   if (isArduinoConnected) {
-    const displayPort = selectedPort.startsWith('/dev/') 
-      ? selectedPort 
-      : `/dev/${selectedPort}`;
-    
+    const displayPort = connectedPort || toFullPort(selectedPort);
+
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10">
@@ -108,13 +119,9 @@ export const SerialConnectionControl = ({
               <SelectValue placeholder="Selecione a porta" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ttyUSB0">/dev/ttyUSB0</SelectItem>
-              <SelectItem value="ttyUSB1">/dev/ttyUSB1</SelectItem>
-              <SelectItem value="ttyACM0">/dev/ttyACM0</SelectItem>
-              <SelectItem value="ttyACM1">/dev/ttyACM1</SelectItem>
-              {availablePorts.map((port) => (
+              {ports.map((port) => (
                 <SelectItem key={port} value={port}>
-                  {port}
+                  {port === "SIM" ? "SIM (Arduino simulado)" : toFullPort(port)}
                 </SelectItem>
               ))}
             </SelectContent>

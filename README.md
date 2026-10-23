@@ -1,181 +1,108 @@
-# RAS - Robô Autônomo de Serviços
+# RAS 2.0 - Robô Autônomo de Serviços
 
-Sistema de controle e navegação autônoma para robô omnidirecional de 3 rodas, utilizando câmeras Intel RealSense (D435 e L515), detecção YOLO e interface web em tempo real.
+Sistema de controle e navegação autônoma para robô omnidirecional de 3 rodas.
+Frontend (React/Vite) e backend (Python) rodam juntos no notebook, sem depender do Lovable.
 
 ![RAS-Imagem](https://github.com/user-attachments/assets/fb7c15bb-2333-40f6-87b7-962a2bd71497)
 
+## Hardware
 
-## 📋 Pré-requisitos
+- Robô omnidirecional com 3 motores DC + Arduino (`arduino/arduino_robot_control.ino`)
+- **Logitech C270**: câmera RGB frontal (YOLO)
+- **LiDAR 2D**: LDROBOT LD06/LD19 ou Slamtec RPLIDAR A1/A2/C1 (obstáculos ao redor)
+- **Intel RealSense L515** (opcional): continua funcionando enquanto estiver no robô
+- Tablet (opcional) para a "carinha" de status em `/tablet`
 
-### Hardware
-- Robô omnidirecional com 3 motores DC
-- Arduino (Uno, Mega ou compatível)
-- Intel RealSense D435 (câmera RGB-D)
-- Intel RealSense L515 (LiDAR) - opcional
-- Notebook/PC com USB 3.0
-- Tablet para exibição de status (opcional)
-
-### Software
-- Node.js 18+ e npm
-- Python 3.8+
-- Arduino IDE
-- Driver Intel RealSense SDK 2.0
-
-## 🚀 Instalação
-
-### 1. Clone o repositório
+## ▶️ Rodando
 
 ```bash
-git clone https://github.com/Robo-Ras/ras.git
-cd Robo-Ras
+cd ~/ras-2.0
+./start.sh            # robô real
+./start.sh --sim      # sem o robô: robô, Arduino, câmera e LiDAR simulados
 ```
 
-### 2. Instale as dependências do Frontend
+Abre sozinho em **http://localhost:8080**. `Ctrl+C` encerra tudo (os motores param antes de sair).
+
+Na primeira vez o script instala as dependências do frontend (`npm ci`). O Python usa o venv
+`~/L515` (troque com `RAS_VENV=/outro/venv ./start.sh`).
+
+### Opções úteis
+
+| Opção | Para quê |
+|-------|----------|
+| `--sim` | Testar tudo sem hardware. A porta `SIM` (Arduino simulado) já vem conectada |
+| `--lan` | Acessar de outro aparelho: `http://<ip-do-notebook>:8080/tablet` |
+| `--lidar ld06 --lidar-port /dev/ttyUSB1` | Escolher o LiDAR (padrão: detecta sozinho) |
+| `--lidar-offset 180` / `--lidar-flip` | Alinhar o 0° do LiDAR com a frente do robô |
+| `--camera-device /dev/video2` | Escolher a webcam (padrão: procura a C270) |
+| `--l515 off` | Ignorar a L515 |
+| `--no-browser` | Não abrir o navegador |
+
+Todas: `./start.sh --help`.
+
+### Na simulação
+
+A câmera simulada mostra a visão do robô e um mini-mapa (canto superior direito) com a sala,
+o rastro do robô e os pontos do LiDAR. Dá para dirigir pelos botões/WASD, ligar o modo
+autônomo e o YOLO normalmente.
+
+## 🧪 Testes (sem o robô)
 
 ```bash
-npm install
+./test.sh
 ```
 
-### 3. Instale as dependências do Python
+- Drivers do LD06 e RPLIDAR com pacotes montados byte a byte (CRC, sincronismo, ângulos)
+- Arduino simulado interpretando os comandos igual ao `.ino`
+- Navegação autônoma rodando 3 × 3 minutos na sala simulada, sem colisões
+- Servidor WebSocket: as mesmas mensagens que o frontend manda (mover, autônomo, serial, tablet)
+- YOLO + LiDAR: pessoas detectadas recebem a distância lida pelo LiDAR
+- Frontend: checagem de tipos e build
+
+## Arquivos
+
+| Arquivo | Função |
+|---------|--------|
+| `start.sh` | Sobe backend + frontend juntos |
+| `test.sh` | Testes internos |
+| `backend/robot_autonomous_control.py` | Servidor WebSocket (8765), obstáculos, navegação, Arduino |
+| `backend/sensors.py` | C270 (OpenCV), L515 (librealsense 2.54), LiDAR LD06 e RPLIDAR |
+| `backend/simulator.py` | Mundo simulado, Arduino virtual, LiDAR e câmera sintéticos |
+| `backend/robot_tracking_system.py` | YOLO + filtro de Kalman; distância pela L515 ou pelo LiDAR |
+| `frontend/src/pages/Index.tsx` | Painel principal |
+| `frontend/src/pages/TabletStatus.tsx` | Tela do tablet |
+| `frontend/src/components/Lidar2DView.tsx` | Radar do LiDAR 2D |
+| `frontend/src/lib/ws.ts` | Endereço do backend (mesmo host da página, ou `VITE_WS_URL`) |
+
+### L515 e librealsense
+
+O suporte ao L515 saiu da librealsense 2.55+. O `pyrealsense2` do pip (2.56) não enxerga a
+câmera, então o backend carrega a build 2.54 de `~/librealsense/build/wrappers/python`
+(troque com `RAS_REALSENSE_DIR`). Não é mais preciso rodar de dentro dessa pasta.
+
+## Navegação autônoma
+
+A cada 100 ms o backend junta os obstáculos de todos os sensores (LiDAR 2D, L515, YOLO):
+
+1. Se há algo no **corredor à frente** (largura do robô + margem) a menos de 0,8 m, gira para o
+   lado com mais espaço e continua girando até o caminho abrir
+2. Senão anda para frente; a cada ~1,5 s gira um pouco para observar ao redor
+
+Parâmetros em `AutonomousNavigator` e `ObstacleDetector` (`backend/robot_autonomous_control.py`).
+
+## Instalação em outra máquina
 
 ```bash
+cd frontend && npm ci
 pip install -r backend/requirements.txt
 ```
-
-### 4. Configure o Arduino
-
-1. Abra o Arduino IDE
-2. Carregue o arquivo `arduino_robot_control.ino`
-3. Selecione a porta correta (ex: `/dev/ttyUSB0` no Linux)
-4. Faça upload para o Arduino
-
-
-### 5. Instalar Intel RealSense SDK
-
-```bash
-# Ubuntu/Debian
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
-sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main"
-sudo apt update
-sudo apt install librealsense2-dkms librealsense2-utils
-```
-
-## ▶️ Executando o Sistema
-
-### 1. Inicie o servidor web (Frontend)
-
-```bash
-npm run dev
-```
-
-O servidor iniciará em `http://localhost:5173`
-
-### 2. Inicie o backend Python
-
-Em outro terminal:
-
-```bash
-cd backend
-python3 robot_autonomous_control.py
-```
-
-### 3. Acesse a interface
-
-Abra o navegador e acesse: `http://localhost:5173`
-
-## 🎮 Como Usar
-
-### Conexão com Arduino
-1. Conecte o Arduino via USB
-2. Na interface web, selecione a porta serial
-3. Clique em "Conectar"
-
-### Controle Manual
-- **Teclado**: WASD ou setas direcionais
-- **Rotação**: Q (anti-horário) / E (horário)
-- **Parar**: Espaço
-- **Velocidade**: Ajuste pelos sliders
-
-### Navegação Autônoma
-1. Configure a velocidade desejada
-2. Ative o switch "Navegação Autônoma"
-3. O robô navegará evitando obstáculos automaticamente
-
-### Controle por Voz
-Comandos reconhecidos em português:
-- "frente", "avançar", "pra frente"
-- "trás", "voltar", "ré"
-- "direita", "esquerda"
-- "parar", "pare", "stop"
-- "modo autônomo", "modo manual"
-
-## Arquivos por Categoria
-
-### 🐍 Backend Python (Essenciais)
-| Arquivo | Função |
-|---------|--------|
-| `robot_autonomous_control.py` | Servidor WebSocket (porta 8765) + Flask (porta 5000), processamento de câmeras, lógica de navegação |
-| `robot_tracking_system.py` | Sistema de tracking com YOLO e Kalman Filter para L515 + D435 |
-| `requirements.txt` | Lista de dependências Python |
-
-### 🔌 Arduino (Essencial)
-| Arquivo | Função |
-|---------|--------|
-| `arduino_robot_control.ino` | Recebe comandos via Serial e controla os 3 motores |
-
-### 🌐 Frontend React (Essenciais)
-| Pasta/Arquivo | Função |
-|---------------|--------|
-| `src/pages/Index.tsx` | Dashboard principal de controle |
-| `src/pages/TabletStatus.tsx` | Interface do tablet (carinha de emoções) |
-| `src/components/DirectionalControl.tsx` | Controle direcional WASD |
-| `src/components/MotorSpeedControl.tsx` | Controle de velocidade por motor |
-| `src/components/SerialConnectionControl.tsx` | Conexão com Arduino |
-| `src/components/CameraStatus.tsx` | Status das câmeras RealSense |
-| `src/components/AutonomousControl.tsx` | Controle do modo autônomo |
-| `src/components/VoiceControl.tsx` | Controle por voz |
-| `src/components/MultiCameraView.tsx` | Visualização multi-câmera |
-| `src/components/SensorVisualization.tsx` | Visualização de sensores |
-
----
-
-
-## 🔧 Configuração
-
-### Portas e Conexões
-| Serviço | Porta |
-|---------|-------|
-| Frontend (Vite) | 5173 |
-| WebSocket (Python) | 8765 |
-| API Flask | 5000 |
-
-### Parâmetros de Navegação
-Editáveis em `robot_autonomous_control.py`:
-- `SAFE_DISTANCE`: Distância mínima de obstáculos (padrão: 0.5m)
-- `SCAN_INTERVAL`: Intervalo de varredura (padrão: 2s)
-- `SCAN_DURATION`: Duração da rotação de scan (padrão: 0.3s)
-
-## 🧪 Testes
-
-### Teste 1: Conexão Arduino
-```bash
-# Verifique se a porta está disponível
-ls /dev/ttyUSB*
-```
-
-### Teste 2: Câmeras RealSense
-```bash
-python -c "import pyrealsense2 as rs; print(rs.context().devices)"
-```
-
-### Teste 3: WebSocket
-Inicie o backend e verifique no navegador se o status muda para "Conectado"
 
 ## ❗ Solução de Problemas
 
 | Problema | Solução |
 |----------|---------|
-| Porta serial não aparece | Verifique conexão USB e permissões (`sudo chmod 666 /dev/ttyUSB0`) |
-| Câmera não detectada | Reconecte USB 3.0, verifique `realsense-viewer` |
-| WebSocket desconectado | Verifique se `robot_autonomous_control.py` está rodando |
-| Robô não responde | Verifique alimentação e conexão do Arduino |
+| Porta serial não aparece | Verifique o cabo e permissões: `sudo usermod -aG dialout $USER` (relogar) |
+| LiDAR não detectado | Passe `--lidar ld06 --lidar-port /dev/ttyUSBx` (ou `rplidar`) |
+| Pontos do LiDAR girados/espelhados | Ajuste `--lidar-offset` / `--lidar-flip` olhando o radar na interface |
+| Webcam errada | `v4l2-ctl --list-devices` e depois `--camera-device /dev/videoN` |
+| Tablet não conecta | Use `./start.sh --lan` e abra `http://<ip-do-notebook>:8080/tablet` |

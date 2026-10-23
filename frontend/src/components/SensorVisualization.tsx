@@ -69,7 +69,7 @@ export const SensorVisualization = ({ cameraImage, groundObstacles, heightObstac
       {/* Camera Feed with Object Tracking */}
       <Card className="p-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-lg font-semibold">📹 Câmera D435 (Superior)</h3>
+          <h3 className="text-lg font-semibold">📹 Câmera C270 (Frontal)</h3>
           {trackedObjects && trackedObjects.length > 0 && (
             <Badge variant="default">{trackedObjects.length} objeto(s)</Badge>
           )}
@@ -117,7 +117,7 @@ export const SensorVisualization = ({ cameraImage, groundObstacles, heightObstac
                       <rect
                         x={bboxX}
                         y={bboxY - 24}
-                        width={obj.depth ? 90 : 50}
+                        width={obj.depth ? 110 : 70}
                         height="20"
                         fill="hsl(var(--primary))"
                         opacity="0.9"
@@ -153,8 +153,8 @@ export const SensorVisualization = ({ cameraImage, groundObstacles, heightObstac
 
       {/* Ground Obstacles - LiDAR */}
       <Card className="p-4">
-        <h3 className="text-lg font-semibold mb-2">🎯 LiDAR L515 (Inferior)</h3>
-        <p className="text-xs text-muted-foreground mb-3">Obstáculos no chão</p>
+        <h3 className="text-lg font-semibold mb-2">🎯 LiDAR 2D</h3>
+        <p className="text-xs text-muted-foreground mb-3">Obstáculos à frente (setores de 40°)</p>
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-2">
             {renderObstacleSector('left', groundObstacles)}
@@ -176,7 +176,7 @@ export const SensorVisualization = ({ cameraImage, groundObstacles, heightObstac
       {/* Height Obstacles - Camera */}
       <Card className="p-4">
         <h3 className="text-lg font-semibold mb-2">📏 Detecção de Altura</h3>
-        <p className="text-xs text-muted-foreground mb-3">Objetos altos pela câmera</p>
+        <p className="text-xs text-muted-foreground mb-3">Câmera (YOLO) ou L515</p>
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-2">
             {renderObstacleSector('left', heightObstacles)}

@@ -1,6 +1,6 @@
 # Dependências Python para Sistema de Navegação Autônoma
 
-# Intel RealSense SDK
+# Intel RealSense SDK (L515 precisa da build 2.54, veja o README)
 pyrealsense2
 
 # Comunicação Serial
@@ -16,14 +16,9 @@ numpy<2.0.0
 # Cálculos científicos
 scipy
 
-# Reconstrução 3D
-open3d
-
 # Detecção de Objetos com YOLO
 ultralytics
 
 # Tracking e Filtragem
 filterpy
 
-# Async/Concurrent
-asyncio
