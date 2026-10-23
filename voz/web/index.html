@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>José</title>
+<style>
+  /* Mesma tela do jose.py original: imagens 1920x1080, coordenadas em pixels da imagem */
+  :root {
+    --fundo: #FFFFFF;
+    --principal: #1800AD;
+    --titulo-historia: #FF751F;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--fundo);
+    font-family: Arial, Helvetica, sans-serif;
+    cursor: none;
+  }
+  #palco {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: center;
+    overflow: hidden;
+    background: var(--fundo);
+  }
+  #rosto {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+  }
+  /* Ao ouvir "José" o olho esquerdo vai de x 571.4 para x 108 em 0.3 s */
+  #rosto.deslizando {
+    transform: translateX(-463.4px);
+    transition: transform 0.3s linear;
+  }
+  .texto {
+    position: absolute;
+    left: 0;
+    width: 1920px;
+    text-align: center;
+    color: var(--principal);
+    font-weight: bold;
+  }
+  #comando {
+    top: 240px;
+    left: 100px;
+    width: 1720px;
+    font-size: 80px;
+    transform: translateY(-50%);
+  }
+  #agradecimento {
+    top: 540px;
+    font-size: 93px;
+    transform: translateY(-50%);
+  }
+  #historia { position: absolute; inset: 0; }
+  /* Barra: bolinha de 65 px andando de (164.6, 908.8) até (1617, 908.8), linha de 15 px */
+  #linha {
+    position: absolute;
+    left: 197.1px;
+    width: 1452.4px;
+    top: 933.8px;
+    height: 15px;
+    border-radius: 8px;
+    background: var(--principal);
+  }
+  #bolinha {
+    position: absolute;
+    left: 164.6px;
+    top: 908.8px;
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    background: var(--principal);
+  }
+  #titulo {
+    position: absolute;
+    left: 0;
+    width: 1846.6px; /* centralizado na barra (x 923.3), não na tela */
+    bottom: 191.2px; /* base do texto 20 px acima da bolinha */
+    text-align: center;
+    color: var(--titulo-historia);
+    font-weight: bold;
+    font-size: 53px;
+  }
+  #transcricao, #velocidade {
+    position: fixed;
+    color: gray;
+    font-family: Consolas, "DejaVu Sans Mono", monospace;
+  }
+  #transcricao { left: 10px; top: 10px; font-size: 16px; }
+  #velocidade { right: 10px; bottom: 10px; font-size: 13px; }
+  #aviso {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: var(--fundo);
+    color: var(--principal);
+    font-size: 32px;
+    text-align: center;
+    padding: 16px;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="palco">
+  <img id="rosto" src="/rostojose/joseacordado.png" alt="">
+  <div id="comando" class="texto" hidden></div>
+  <div id="agradecimento" class="texto" hidden>Ao seu dispor</div>
+  <div id="historia" hidden>
+    <div id="titulo"></div>
+    <div id="linha"></div>
+    <div id="bolinha"></div>
+  </div>
+</div>
+<div id="transcricao"></div>
+<div id="velocidade"></div>
+<div id="aviso">José não está respondendo.<br>Rode: python voz/jose.py</div>
+
+<script>
+  const IMAGENS = {
+    acordado: 'joseacordado.png',
+    transicao: 'joseacordado.png',
+    ouvindo: 'joseouvindo.png',
+    comando: 'Josefechado.png',
+    historia: 'josehistoria.png',
+  };
+  // Pré-carrega para a troca de rosto não piscar
+  Object.values(IMAGENS).forEach((nome) => { new Image().src = `/rostojose/${nome}`; });
+
+  const $ = (id) => document.getElementById(id);
+  const palco = $('palco');
+
+  // Mantém a proporção 16:9; como no original, só reduz, nunca amplia
+  const ajustarEscala = () => {
+    const escala = Math.min(innerWidth / 1920, innerHeight / 1080, 1);
+    palco.style.transform = `translate(-50%, -50%) scale(${escala})`;
+  };
+  addEventListener('resize', ajustarEscala);
+  ajustarEscala();
+
+  // Clique entra em tela cheia (Esc sai)
+  document.addEventListener('click', () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+  });
+
+  let estadoAnterior = null;
+
+  const mostrar = (e) => {
+    const rosto = $('rosto');
+    const imagem = IMAGENS[e.estado];
+    rosto.hidden = !imagem;
+    if (imagem && !rosto.src.endsWith(imagem)) rosto.src = `/rostojose/${imagem}`;
+
+    if (e.estado !== estadoAnterior) {
+      // Só o estado "transicao" desliza; nos outros o rosto volta para x 0 sem animação
+      rosto.classList.remove('deslizando');
+      if (e.estado === 'transicao') {
+        void rosto.offsetWidth; // reinicia a animação
+        rosto.classList.add('deslizando');
+      }
+      estadoAnterior = e.estado;
+    }
+
+    $('comando').hidden = e.estado !== 'comando';
+    $('comando').textContent = e.comando;
+    $('agradecimento').hidden = e.estado !== 'agradecimento';
+
+    $('historia').hidden = e.estado !== 'historia';
+    if (e.estado === 'historia') {
+      $('titulo').textContent = e.titulo;
+      $('bolinha').style.left = `${164.6 + (1617 - 164.6) * e.progresso}px`;
+    }
+
+    $('transcricao').textContent = e.transcricao;
+    $('velocidade').textContent = e.velocidade;
+  };
+
+  const atualizar = async () => {
+    try {
+      const resposta = await fetch('/estado', { cache: 'no-store' });
+      mostrar(await resposta.json());
+      $('aviso').style.display = 'none';
+    } catch {
+      $('aviso').style.display = 'flex';
+    }
+    setTimeout(atualizar, 100);
+  };
+  atualizar();
+</script>
+</body>
+</html>

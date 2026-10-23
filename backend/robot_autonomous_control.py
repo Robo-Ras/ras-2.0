@@ -30,6 +30,21 @@ import sensors
 
 SIM_PORT = 'SIM'
 
+# Comandos de voz (assistente José em voz/ ou o microfone do navegador): direção e por quantos segundos.
+# O Arduino não para sozinho, então cada comando é um movimento curto que termina com 'stop'.
+# Os tempos de giro dependem da velocidade e do piso: calibre no robô real.
+VOICE_SPEED = 100
+VOICE_MOVES = {
+    'frente': ('forward', 1.5),
+    'tras': ('backward', 1.5),
+    'direita': ('right', 1.5),
+    'esquerda': ('left', 1.5),
+    'meia_volta': ('rotate_right', 2.0),
+    'volta_completa': ('rotate_right', 4.0),
+}
+# Reconhecidos, mas ainda sem comportamento no backend (só aparecem na interface)
+VOICE_PENDING = {'me_segue', 'lado_direito', 'lado_esquerdo'}
+
 
 class ObjectTracker:
     """Rastreia objetos detectados pela profundidade (L515)"""
@@ -585,6 +600,7 @@ class WebSocketServer:
         self.robot_moving = False
         self.last_move_time = 0  # Para detectar timeout de movimento manual
         self.last_navigation = None
+        self.voice_task = None  # movimento curto disparado por comando de voz
 
     async def register(self, websocket):
         """Registra novo cliente e envia o estado atual para ele"""
@@ -693,7 +709,11 @@ class WebSocketServer:
             await self.send_to_all({'type': 'serial_status', 'connected': False, 'port': None})
             await self.send_to_all({'type': 'autonomous_status', 'enabled': False})
 
+        elif cmd_type == 'voice_command':
+            await self.handle_voice_command(data.get('command'), data.get('text', ''), data.get('source', 'browser'))
+
         elif cmd_type == 'move':
+            self.cancel_voice_move()
             now = asyncio.get_running_loop().time()
             if 'm1' in data and 'm2' in data and 'm3' in data:
                 print(f"🎮 COMANDO RECEBIDO DO FRONTEND: M1={data['m1']}, M2={data['m2']}, M3={data['m3']}")
@@ -708,6 +728,7 @@ class WebSocketServer:
                 self.last_move_time = now
 
         elif cmd_type == 'set_autonomous':
+            self.cancel_voice_move()
             self.autonomous_mode = data.get('enabled', False)
             if 'speed' in data:
                 self.navigator.base_speed = data['speed']
@@ -724,6 +745,53 @@ class WebSocketServer:
 
         elif cmd_type == 'robot_face_heartbeat':
             self.tablet_connected = True
+
+    def cancel_voice_move(self):
+        if self.voice_task and not self.voice_task.done():
+            self.voice_task.cancel()
+        self.voice_task = None
+
+    async def handle_voice_command(self, command, text, source):
+        """Executa um comando de voz e avisa todas as interfaces"""
+        print(f"🎙️ COMANDO DE VOZ ({source}): {command} | \"{text}\"")
+        self.cancel_voice_move()
+        status = 'ok'
+
+        if command == 'parar':
+            self.autonomous_mode = False
+            self.robot.move('stop', 0)
+            self.robot_moving = False
+            await self.send_to_all({'type': 'autonomous_status', 'enabled': False})
+        elif command in ('autonomo', 'manual'):
+            await self.process_command({'type': 'set_autonomous', 'enabled': command == 'autonomo'})
+        elif command in VOICE_MOVES:
+            if not self.robot.is_connected():
+                status = 'no_robot'
+            else:
+                self.autonomous_mode = False
+                await self.send_to_all({'type': 'autonomous_status', 'enabled': False})
+                direction, seconds = VOICE_MOVES[command]
+                self.voice_task = asyncio.create_task(self._voice_move(direction, seconds))
+        elif command in VOICE_PENDING:
+            status = 'not_implemented'
+        else:
+            status = 'unknown'
+
+        await self.send_to_all({'type': 'voice_command', 'command': command, 'text': text,
+                                'source': source, 'status': status})
+
+    async def _voice_move(self, direction, seconds):
+        loop = asyncio.get_running_loop()
+        end = loop.time() + seconds
+        # Se for cancelado, quem cancelou (outro comando, joystick, autônomo) assume os motores
+        self.robot.move(direction, VOICE_SPEED)
+        self.robot_moving = True
+        # Mantém last_move_time em dia para o timeout de movimento manual não marcar como parado
+        while loop.time() < end:
+            self.last_move_time = loop.time()
+            await asyncio.sleep(0.1)
+        self.robot.move('stop', 0)
+        self.robot_moving = False
 
     async def set_yolo(self, enabled):
         if enabled and self.sensors.camera is None and self.sensors.l515 is None:

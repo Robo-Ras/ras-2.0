@@ -1,0 +1,6 @@
+# Assistente de voz José (python jose.py)
+faster-whisper   # traz também o "av", usado para ler a duração dos mp3
+sounddevice      # precisa da PortAudio do sistema: sudo apt install libportaudio2
+numpy
+pygame
+websockets>=12   # conexão com o backend do robô

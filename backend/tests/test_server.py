@@ -146,6 +146,33 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertEqual(self.world.wheels, (0, 0, 0))
 
+    async def test_voice_command_moves_then_stops(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            x0, y0, _ = self.world.pose()
+            await c.send(type='voice_command', command='frente', text='vai pra frente', source='jose')
+            ack = await c.wait_for('voice_command')
+            self.assertEqual((ack['command'], ack['status'], ack['source']), ('frente', 'ok', 'jose'))
+            await c.wait_for('sensor_data', lambda m: m['robot_moving'])
+            await asyncio.sleep(rac.VOICE_MOVES['frente'][1] + 0.3)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+            x1, y1, _ = self.world.pose()
+            self.assertGreater(math.hypot(x1 - x0, y1 - y0), 0.1)
+
+    async def test_voice_stop_interrupts_move(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.send(type='voice_command', command='volta_completa', text='volta completa')
+            await c.wait_for('sensor_data', lambda m: m['robot_moving'])
+            await c.send(type='voice_command', command='parar', text='para')
+            await c.wait_for('voice_command', lambda m: m['command'] == 'parar')
+            await asyncio.sleep(0.2)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+            await c.send(type='voice_command', command='me_segue', text='me segue')
+            ack = await c.wait_for('voice_command', lambda m: m['command'] == 'me_segue')
+            self.assertEqual(ack['status'], 'not_implemented')
+
 
 if __name__ == '__main__':
     unittest.main()

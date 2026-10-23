@@ -8,3 +8,6 @@ __pycache__/
 *.pt
 .vscode/*
 .DS_Store
+
+# Histórias do José (~260 MB): baixe de https://github.com/KimberlyRotman/RAS-CommandPerVoice/tree/main/historinhas
+voz/historinhas/*.mp3

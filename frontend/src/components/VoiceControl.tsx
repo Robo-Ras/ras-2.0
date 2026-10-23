@@ -3,14 +3,22 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Mic, MicOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { identifyVoiceCommand, voiceCommandLabel, type VoiceCommandEvent, type VoiceCommandId } from '@/lib/voiceCommands';
 
 interface VoiceControlProps {
-  onSendCommand: (m1: number, m2: number, m3: number) => void;
-  onToggleAutonomous: (enabled: boolean) => void;
+  onVoiceCommand: (command: VoiceCommandId, text: string) => void;
+  lastVoiceEvent?: VoiceCommandEvent | null;
   isConnected: boolean;
 }
 
-const VoiceControl = ({ onSendCommand, onToggleAutonomous, isConnected }: VoiceControlProps) => {
+const STATUS_TEXT: Record<string, string> = {
+  ok: 'executado',
+  no_robot: 'Arduino desconectado',
+  not_implemented: 'ainda não implementado no robô',
+  unknown: 'desconhecido pelo backend',
+};
+
+const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceControlProps) => {
   const [isListening, setIsListening] = useState(false);
   const [lastCommand, setLastCommand] = useState<string>('');
   const [transcript, setTranscript] = useState<string>('');
@@ -116,84 +124,22 @@ const VoiceControl = ({ onSendCommand, onToggleAutonomous, isConnected }: VoiceC
     };
   }, [isListening]);
 
-  const processCommand = (command: string) => {
-    console.log('🔍 Processando comando:', command);
-    console.log('🔍 Comprimento:', command.length, '| Minúscula:', command.toLowerCase());
-    
-    const SPEED = 60;
-    let commandExecuted = false;
-
-    // Comandos de movimento - com mais variações
-    if (command.includes('frente') || command.includes('pra frente') || 
-        command.includes('para frente') || command.includes('avançar') ||
-        command.includes('vai') || command.includes('vá')) {
-      console.log('✅ Comando reconhecido: FRENTE');
-      onSendCommand(-SPEED, 0, SPEED);
-      setLastCommand(`Frente (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Movendo para frente" });
-      commandExecuted = true;
-    } 
-    else if (command.includes('trás') || command.includes('tras') || 
-             command.includes('pra trás') || command.includes('para trás') ||
-             command.includes('voltar') || command.includes('ré')) {
-      console.log('✅ Comando reconhecido: TRÁS');
-      onSendCommand(SPEED, 0, -SPEED);
-      setLastCommand(`Trás (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Movendo para trás" });
-      commandExecuted = true;
-    } 
-    else if (command.includes('direita') || command.includes('pra direita') || 
-             command.includes('para direita') || command.includes('vira direita') ||
-             command.includes('virar direita')) {
-      console.log('✅ Comando reconhecido: DIREITA');
-      onSendCommand(0, SPEED, -SPEED);
-      setLastCommand(`Direita (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Movendo para direita" });
-      commandExecuted = true;
-    } 
-    else if (command.includes('esquerda') || command.includes('pra esquerda') || 
-             command.includes('para esquerda') || command.includes('vira esquerda') ||
-             command.includes('virar esquerda')) {
-      console.log('✅ Comando reconhecido: ESQUERDA');
-      onSendCommand(0, -SPEED, SPEED);
-      setLastCommand(`Esquerda (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Movendo para esquerda" });
-      commandExecuted = true;
-    } 
-    else if (command.includes('parar') || command.includes('pare') || 
-             command.includes('para') || command.includes('stop')) {
-      console.log('✅ Comando reconhecido: PARAR');
-      onSendCommand(0, 0, 0);
-      setLastCommand(`Parar (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Robô parado" });
-      commandExecuted = true;
-    }
-    // Comando de modo autônomo
-    else if (command.includes('autônomo') || command.includes('autonomo') || 
-             command.includes('modo autônomo') || command.includes('modo autonomo') ||
-             command.includes('autónomo')) {
-      console.log('✅ Comando reconhecido: MODO AUTÔNOMO');
-      onToggleAutonomous(true);
-      setLastCommand(`Modo Autônomo (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Modo autônomo ativado" });
-      commandExecuted = true;
-    }
-    else if (command.includes('manual') || command.includes('modo manual')) {
-      console.log('✅ Comando reconhecido: MODO MANUAL');
-      onToggleAutonomous(false);
-      setLastCommand(`Modo Manual (reconhecido: "${command}")`);
-      toast({ title: "✅ Comando de Voz", description: "Modo manual ativado" });
-      commandExecuted = true;
-    }
-    
-    if (!commandExecuted) {
-      console.log('❌ Comando não reconhecido:', command);
-      toast({ 
-        title: "❌ Comando não reconhecido", 
-        description: `Você disse: "${command}"`,
+  const processCommand = (text: string) => {
+    console.log('🔍 Processando comando:', text);
+    const command = identifyVoiceCommand(text);
+    if (!command) {
+      console.log('❌ Comando não reconhecido:', text);
+      toast({
+        title: "❌ Comando não reconhecido",
+        description: `Você disse: "${text}"`,
         variant: "destructive"
       });
+      return;
     }
+    console.log('✅ Comando reconhecido:', command);
+    // O backend executa e devolve {type: 'voice_command'}, que aparece em lastVoiceEvent
+    onVoiceCommand(command, text);
+    setLastCommand(`${voiceCommandLabel(command)} (reconhecido: "${text}")`);
   };
 
   const startAudioMonitoring = async () => {
@@ -284,7 +230,7 @@ const VoiceControl = ({ onSendCommand, onToggleAutonomous, isConnected }: VoiceC
         setIsListening(true);
         toast({
           title: "Reconhecimento Ativado",
-          description: "🎤 Comandos: frente, trás, direita, esquerda, parar, modo autônomo",
+          description: "🎤 Ex.: vai pra frente, meia volta, para, modo autônomo",
         });
       } catch (error) {
         console.error('❌ Erro ao acessar microfone:', error);
@@ -312,7 +258,8 @@ const VoiceControl = ({ onSendCommand, onToggleAutonomous, isConnected }: VoiceC
           <div>
             <h3 className="text-lg font-semibold">Controle por Voz</h3>
             <p className="text-sm text-muted-foreground">
-              Comandos: frente, trás, direita, esquerda, parar, modo autônomo
+              Ex.: "vai pra frente", "meia volta", "volta completa", "para", "modo autônomo".
+              O assistente José (pasta voz/) usa os mesmos comandos.
             </p>
           </div>
           <Button
@@ -415,6 +362,23 @@ const VoiceControl = ({ onSendCommand, onToggleAutonomous, isConnected }: VoiceC
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {lastVoiceEvent && (
+          <div className="p-3 bg-primary/10 rounded-md">
+            <p className="text-sm text-muted-foreground">
+              Último comando de voz recebido pelo robô ({lastVoiceEvent.source === 'jose' ? 'assistente José' : 'navegador'}):
+            </p>
+            <p className="text-base font-semibold text-primary">
+              {voiceCommandLabel(lastVoiceEvent.command)}
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                — {STATUS_TEXT[lastVoiceEvent.status] ?? lastVoiceEvent.status}
+              </span>
+            </p>
+            {lastVoiceEvent.text && (
+              <p className="text-xs text-muted-foreground mt-1">"{lastVoiceEvent.text}"</p>
+            )}
           </div>
         )}
 

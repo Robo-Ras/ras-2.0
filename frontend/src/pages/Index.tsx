@@ -12,6 +12,7 @@ import { ArduinoTroubleshooting } from "@/components/ArduinoTroubleshooting";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { getWsUrl } from "@/lib/ws";
+import type { VoiceCommandEvent, VoiceCommandId } from "@/lib/voiceCommands";
 
 const Index = () => {
   const [lastCommand, setLastCommand] = useState<string>("");
@@ -31,6 +32,7 @@ const Index = () => {
   const [yoloEnabled, setYoloEnabled] = useState(false);
   const [navigationStatus, setNavigationStatus] = useState<any>();
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
+  const [lastVoiceEvent, setLastVoiceEvent] = useState<VoiceCommandEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
 
@@ -87,6 +89,11 @@ const Index = () => {
               title: "Arduino Conectado",
               description: `Conectado na porta ${data.port}`,
             });
+          }
+        } else if (data.type === 'voice_command') {
+          setLastVoiceEvent(data);
+          if (data.source === 'jose') {
+            toast({ title: "🎙️ José", description: `Comando de voz: ${data.text || data.command}` });
           }
         } else if (data.type === 'autonomous_status') {
           setAutonomousMode(data.enabled);
@@ -160,6 +167,12 @@ const Index = () => {
         type: 'move',
         m1, m2, m3
       }));
+    }
+  };
+
+  const handleVoiceCommand = (command: VoiceCommandId, text: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'voice_command', command, text, source: 'browser' }));
     }
   };
 
@@ -287,8 +300,8 @@ const Index = () => {
       {/* Voice Control */}
       <div className="mb-6">
         <VoiceControl
-          onSendCommand={handleSendCommand}
-          onToggleAutonomous={handleToggleAutonomous}
+          onVoiceCommand={handleVoiceCommand}
+          lastVoiceEvent={lastVoiceEvent}
           isConnected={isConnected}
         />
       </div>

@@ -3,6 +3,8 @@
 Sistema de controle e navegação autônoma para robô omnidirecional de 3 rodas.
 Frontend (React/Vite) e backend (Python) rodam juntos no notebook, sem depender do Lovable.
 
+🚀 Passo a passo para ligar o robô: [COMO_RODAR.md](COMO_RODAR.md)
+
 📖 Documentação completa (arquitetura, sensores, navegação, protocolo, testes): [DOCUMENTACAO.md](DOCUMENTACAO.md)
 
 ![RAS-Imagem](https://github.com/user-attachments/assets/fb7c15bb-2333-40f6-87b7-962a2bd71497)
@@ -39,6 +41,7 @@ Na primeira vez o script instala as dependências do frontend (`npm ci`). O Pyth
 | `--camera-device /dev/video2` | Escolher a webcam (padrão: procura a C270) |
 | `--l515 off` | Ignorar a L515 |
 | `--no-browser` | Não abrir o navegador |
+| `--voz` | Assistente de voz José; rosto em http://localhost:8090 ([voz/README.md](voz/README.md)) |
 
 Todas: `./start.sh --help`.
 

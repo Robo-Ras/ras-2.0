@@ -6,6 +6,7 @@
 #   ./start.sh --sim           sem o robô: robô, Arduino, câmera e LiDAR simulados
 #   ./start.sh --lan           permite abrir pelo tablet: http://<ip-do-notebook>:8080/tablet
 #   ./start.sh --no-browser    não abre o navegador
+#   ./start.sh --voz           também sobe o assistente de voz José; rosto em http://localhost:8090
 #
 # As outras opções vão direto para o backend, ex.:
 #   ./start.sh --lidar ld06 --lidar-port /dev/ttyUSB1 --camera-device /dev/video2
@@ -20,14 +21,17 @@ PYTHON="$VENV/bin/python"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 
 OPEN_BROWSER=1
+VOICE=0
+VOICE_ARGS=()
 WEB_HOST=127.0.0.1
 BACKEND_ARGS=()
 for arg in "$@"; do
   case "$arg" in
-    --no-browser) OPEN_BROWSER=0 ;;
-    --lan) WEB_HOST=0.0.0.0; BACKEND_ARGS+=(--host 0.0.0.0) ;;
+    --no-browser) OPEN_BROWSER=0; VOICE_ARGS+=(--no-browser) ;;
+    --voz) VOICE=1 ;;
+    --lan) WEB_HOST=0.0.0.0; BACKEND_ARGS+=(--host 0.0.0.0); VOICE_ARGS+=(--host 0.0.0.0) ;;
     -h|--help)
-      sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
       echo; echo "Opções do backend:"
       cd "$ROOT/backend" && exec "$PYTHON" robot_autonomous_control.py --help ;;
     *) BACKEND_ARGS+=("$arg") ;;
@@ -56,6 +60,12 @@ echo "🌐 Frontend: http://localhost:8080"
 (cd "$ROOT/frontend" && exec ./node_modules/.bin/vite --host "$WEB_HOST" --port 8080 --strictPort) &
 PIDS+=($!)
 
+if [ "$VOICE" = 1 ]; then
+  echo "🎙️ Assistente de voz: $PYTHON voz/jose.py ${VOICE_ARGS[*]:-} (rosto em http://localhost:8090)"
+  (cd "$ROOT/voz" && exec "$PYTHON" -u jose.py "${VOICE_ARGS[@]}") &
+  PIDS+=($!)
+fi
+
 if [ "$OPEN_BROWSER" = 1 ]; then
   (
     for _ in $(seq 1 60); do
@@ -68,5 +78,5 @@ if [ "$OPEN_BROWSER" = 1 ]; then
   ) &
 fi
 
-# Se um dos dois cair, derruba o outro
-wait -n "${PIDS[@]}"
+# Se o backend ou o frontend cair, derruba o resto (o José pode fechar sozinho)
+wait -n "${PIDS[0]}" "${PIDS[1]}"

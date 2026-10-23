@@ -106,7 +106,7 @@ O ciclo principal roda **10 vezes por segundo**:
 4. Se o modo autônomo estiver ligado, o navegador decide o movimento e o `RobotController` manda para o Arduino.
 5. Tudo é enviado ao navegador numa mensagem `sensor_data`.
 
-Os comandos manuais (botões, WASD, voz) vão do navegador para o backend e direto para o Arduino, sem esperar o ciclo.
+Os comandos manuais (botões, WASD) vão do navegador para o backend e direto para o Arduino, sem esperar o ciclo. Comandos de voz (navegador ou José) viram um movimento curto com parada automática.
 
 No **modo `--sim`**, as caixas da direita (câmera, LiDAR, Arduino) são substituídas por versões simuladas
 que leem e alteram um mundo virtual. O resto do código é **exatamente o mesmo** do robô real.
@@ -141,6 +141,7 @@ As opções `--lan`, `--no-browser` e `--help` são do próprio script; **todas 
 | `--no-auto-connect` | — | No `--sim`, não conecta o Arduino simulado sozinho (para testar o fluxo de conexão) |
 | `--lan` | — | Libera acesso por outros aparelhos na rede (tablet) |
 | `--no-browser` | — | Não abre o navegador |
+| `--voz` | — | Também sobe o assistente de voz José; o rosto abre em **http://localhost:8090** (veja `voz/README.md`) |
 | `--host` | `127.0.0.1` | Endereço do WebSocket (o `--lan` usa `0.0.0.0`) |
 | `--port` | `8765` | Porta do WebSocket |
 | `--camera` | `auto` | `auto`, `usb` ou `none` |
@@ -194,9 +195,16 @@ ras-2.0/
 ├── start.sh                    # sobe backend + frontend
 ├── test.sh                     # testes internos
 ├── README.md                   # guia rápido
+├── COMO_RODAR.md               # passo a passo para ligar o robô
 ├── DOCUMENTACAO.md             # este arquivo
 ├── arduino/
 │   └── arduino_robot_control.ino
+├── voz/                        # assistente de voz José (veja voz/README.md)
+│   ├── jose.py                       # escuta, transcreve (faster-whisper), manda comandos ao backend e serve o rosto (8090)
+│   ├── web/index.html                # página do rosto
+│   ├── rostojose/                    # rostos do José
+│   ├── historinhas/                  # histórias .mp3 (fora do git)
+│   └── requirements.txt
 ├── backend/
 │   ├── robot_autonomous_control.py   # servidor, obstáculos, navegação, Arduino
 │   ├── sensors.py                    # C270, L515, LD06, RPLIDAR
@@ -215,6 +223,7 @@ ras-2.0/
         ├── pages/Index.tsx           # painel principal
         ├── pages/TabletStatus.tsx    # carinha do tablet
         ├── lib/ws.ts                 # endereço do backend
+        ├── lib/voiceCommands.ts      # vocabulário de voz (o mesmo do José)
         └── components/
             ├── Lidar2DView.tsx       # radar do LiDAR (novo)
             ├── CameraStatus.tsx      # status dos sensores
@@ -475,7 +484,7 @@ Projeto React + TypeScript + Vite + Tailwind + shadcn/ui (o mesmo gerado pelo Lo
 1. Status do servidor Python e do Arduino (com a porta conectada).
 2. Conexão serial (lista de portas vinda do backend).
 3. Modo autônomo: switch, velocidade, estado atual (avançando/girando) e distâncias, parada de emergência.
-4. Controle por voz.
+4. Controle por voz: microfone do navegador (Chrome/Edge) e o último comando recebido pelo robô, venha do navegador ou do assistente José. Os dois mandam `{type: 'voice_command'}` e o backend faz um movimento curto (veja `voz/README.md`).
 5. **Status dos Sensores**: C270, LiDAR 2D, L515 (com selo "simulado" no `--sim`) e modo de tracking.
 6. Sistema de tracking (switch do YOLO) e imagens das câmeras (card da L515 só aparece se ela estiver ligada).
 7. **Radar do LiDAR 2D** (novo): vista de cima, frente para cima, setores verdes/vermelhos, zoom 2/4/8 m e a distância livre à frente.
