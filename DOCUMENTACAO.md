@@ -43,7 +43,7 @@ Para começar rápido, veja o [README](README.md). Aqui está o "por dentro".
 |------|---------|
 | Execução | Um único comando (`./start.sh`) sobe backend + frontend no próprio notebook |
 | Lovable | Não é mais necessário; o frontend completo está em `frontend/` |
-| Sensores | **Logitech C270** (câmera RGB) + **LiDAR 2D** (LD06/LD19 ou RPLIDAR). A **L515** continua suportada enquanto estiver no robô |
+| Sensores | **Logitech C270** (câmera RGB frontal) + **RealSense D435** (cor + profundidade) + **LiDAR 2D** (LD06/LD19 ou RPLIDAR). A L515 saiu do robô |
 | Sem robô | Modo `--sim`: robô, Arduino, câmera e LiDAR simulados |
 | Testes | `./test.sh` com 29 testes automáticos do backend + checagem/build do frontend |
 | Pasta da librealsense | Não é mais preciso rodar de dentro dela; o backend carrega a biblioteca sozinho |
@@ -94,13 +94,13 @@ flowchart LR
     WS --> NAV --> RC
     SM --> C270["Câmera C270"]
     SM --> LIDAR["LiDAR 2D<br/>LD06 / RPLIDAR"]
-    SM --> L515["RealSense L515<br/>(opcional)"]
+    SM --> D435["RealSense D435<br/>cor + profundidade"]
     RC -- "Serial 9600<br/>m1,m2,m3" --> ARD["Arduino + 3 motores"]
 ```
 
 O ciclo principal roda **10 vezes por segundo**:
 
-1. A thread de percepção lê a câmera, a L515 (se houver) e a última volta do LiDAR.
+1. A thread de percepção lê a C270, a D435 e a última volta do LiDAR.
 2. Calcula os obstáculos (setores esquerda/centro/direita e o corredor à frente).
 3. Se o YOLO estiver ligado, detecta objetos e mede a distância deles.
 4. Se o modo autônomo estiver ligado, o navegador decide o movimento e o `RobotController` manda para o Arduino.
@@ -120,7 +120,7 @@ que leem e alteram um mundo virtual. O resto do código é **exatamente o mesmo*
 ```bash
 cd ~/ras-2.0
 
-./start.sh            # robô real (detecta C270, LiDAR e L515 sozinho)
+./start.sh            # robô real (detecta C270, D435 e LiDAR sozinho)
 ./start.sh --sim      # sem o robô: tudo simulado
 ./test.sh             # roda os testes internos
 ./start.sh --help     # todas as opções
@@ -147,7 +147,7 @@ As opções `--lan`, `--no-browser` e `--help` são do próprio script; **todas 
 | `--camera` | `auto` | `auto`, `usb` ou `none` |
 | `--camera-device` | procura a C270 | Ex.: `/dev/video2` ou `2` |
 | `--camera-fov` | `60` | Campo de visão horizontal da câmera, em graus (C270 ≈ 60°) |
-| `--l515` | `auto` | `auto` (usa se estiver conectada), `on`, `off` |
+| `--realsense` | `auto` | D435: `auto` (usa se estiver conectada), `on`, `off` |
 | `--lidar` | `auto` | `auto`, `ld06`, `rplidar`, `rplidar-c1`, `none` |
 | `--lidar-port` | detecta | Ex.: `/dev/ttyUSB1` |
 | `--lidar-baud` | do modelo | Força outra velocidade serial |
@@ -159,7 +159,7 @@ As opções `--lan`, `--no-browser` e `--help` são do próprio script; **todas 
 | Variável | Padrão | Para quê |
 |----------|--------|----------|
 | `RAS_VENV` | `~/L515` | Venv do Python usado pelo `start.sh` e `test.sh` |
-| `RAS_REALSENSE_DIR` | `~/librealsense/build/wrappers/python` | Onde está a build 2.54 do `pyrealsense2` (para a L515) |
+| `RAS_REALSENSE_DIR` | `~/librealsense/build/wrappers/python` | Build local do `pyrealsense2` (se não existir, usa a do pip) |
 | `VITE_WS_URL` | mesmo host da página, porta 8765 | Força outro endereço do backend no frontend |
 
 ### Acessando pelo tablet
@@ -207,7 +207,7 @@ ras-2.0/
 │   └── requirements.txt
 ├── backend/
 │   ├── robot_autonomous_control.py   # servidor, obstáculos, navegação, Arduino
-│   ├── sensors.py                    # C270, L515, LD06, RPLIDAR
+│   ├── sensors.py                    # C270, D435, LD06, RPLIDAR
 │   ├── simulator.py                  # mundo simulado e sensores falsos
 │   ├── robot_tracking_system.py      # YOLO + Kalman
 │   ├── requirements.txt
@@ -227,7 +227,7 @@ ras-2.0/
         └── components/
             ├── StatusBar.tsx         # barra fixa: status dos sensores + PARAR
             ├── Lidar2DView.tsx       # mapa de pontos do LiDAR 2D (com tela de espera)
-            ├── CameraPanel.tsx       # câmera + caixas do YOLO (+ L515 se houver)
+            ├── CameraPanel.tsx       # C270 e D435 + caixas do YOLO
             ├── ObstaclePanel.tsx     # distâncias por setor (chão e altura)
             ├── AutonomousControl.tsx
             ├── DirectionalControl.tsx
@@ -247,10 +247,10 @@ Arquivo principal: `backend/robot_autonomous_control.py`.
 
 | Classe / função | Responsabilidade |
 |-----------------|------------------|
-| `SensorManager` | Guarda a câmera principal, a L515 e o LiDAR; inicia, lê e para todos. Se um sensor falha ao iniciar, é descartado e o sistema segue sem ele |
-| `ObstacleDetector` | `analyze_scan()` para o LiDAR 2D e `analyze_height()` para a profundidade da L515 |
+| `SensorManager` | Guarda a C270, a D435 e o LiDAR; inicia, lê e para todos. Se um sensor falha ao iniciar, é descartado e o sistema segue sem ele |
+| `ObstacleDetector` | `analyze_scan()` para o LiDAR 2D e `analyze_height()` para a profundidade da D435 |
 | `merge_obstacles()` | Junta os obstáculos de vários sensores, ficando com a menor distância de cada setor |
-| `ObjectTracker` | Tracker "básico" por profundidade (só com a L515), código original |
+| `ObjectTracker` | Tracker "básico" por profundidade (só com a D435), código original |
 | `AutonomousNavigator` | Máquina de estados da navegação (seção 7) |
 | `RobotController` | Conexão serial com o Arduino (ou o Arduino simulado), comandos de movimento |
 | `WebSocketServer` | Recebe comandos do navegador, roda o ciclo de sensores e envia `sensor_data` |
@@ -304,18 +304,17 @@ Os LiDARs medem no sentido **horário**; a conversão inverte o sentido, aplica 
 - Usa OpenCV com V4L2, 640×480, MJPG, buffer de 1 frame (menos atraso).
 - Detecção automática: procura em `/sys/class/video4linux` pelo ID USB da C270 (`046d:0825`) ou pelo nome "C270".
   Se não achar, usa a primeira webcam disponível (por exemplo, a do notebook).
-- Câmeras RealSense que aparecem como webcam são ignoradas (elas são tratadas pela classe da L515).
+- Câmeras RealSense que aparecem como webcam são ignoradas (a D435 é tratada pela `RealSenseCamera`).
 - Não tem profundidade: a distância dos objetos vem do LiDAR (seção 6.5).
 
-### RealSense L515 (`RealSenseCamera`)
+### RealSense D435 (`RealSenseCamera`)
 
-- O suporte à L515 foi **removido na librealsense 2.55+**. O `pyrealsense2` instalado pelo pip no venv é 2.56 e
-  **não enxerga** a L515 — era por isso que o script antigo precisava rodar de dentro de
-  `librealsense/build/wrappers/python` (onde está a build 2.54).
-- Agora `load_pyrealsense2()` carrega diretamente o arquivo
-  `~/librealsense/build/wrappers/python/pyrealsense2.cpython-310-x86_64-linux-gnu.so`. Se não existir, usa o do pip.
+- Detectada sozinha: o backend usa a primeira RealSense conectada (`--realsense off` ignora).
+- `load_pyrealsense2()` carrega a build local `~/librealsense/build/wrappers/python` se existir (era necessária para a L515,
+  que já saiu do robô); senão, usa o `pyrealsense2` do pip. A D435 funciona com as duas.
 - Tenta os perfis 640×480 / 320×240 de profundidade, alinhada à imagem colorida, e converte a profundidade para metros.
-- Se a C270 também estiver presente, a C270 vira a câmera principal e a L515 aparece num card separado.
+- Ligue numa porta **USB 3** (azul): em USB 2 ela pode não abrir cor + profundidade juntas.
+- A C270 é a câmera principal; a D435 aparece logo abaixo dela no card **Câmeras**. Se só a D435 estiver conectada, ela vira a principal.
 
 ### LiDAR 2D
 
@@ -341,7 +340,7 @@ Arquivo: `backend/robot_tracking_system.py`.
 
 - Modelo `yolov8n.pt`, detecção a cada 3 frames, filtro de Kalman suavizando a posição de cada objeto entre detecções.
 - **Distância de cada objeto:**
-  - com L515: mediana da profundidade numa janela no centro da caixa;
+  - com a D435: mediana da profundidade numa janela no centro da caixa;
   - com C270: calcula o **ângulo** do centro da caixa na imagem (usando o campo de visão de 60°) e pega a menor
     leitura do LiDAR em ±3° desse ângulo.
 - Os objetos viram obstáculos por setor (`_convert_tracking_to_obstacles`) e entram na navegação junto com o LiDAR.
@@ -383,7 +382,7 @@ Por que o corredor? Com setores largos, uma parede **ao lado** do robô (que nã
 aparecia nos setores esquerda/direita e fazia o robô travar girando. O corredor só considera o que realmente
 está no caminho.
 
-Para sensores sem corredor (L515, YOLO), o setor central faz esse papel.
+Para sensores sem corredor (D435, YOLO), o setor central faz esse papel.
 
 ### Máquina de estados (`AutonomousNavigator`)
 
@@ -483,10 +482,10 @@ Projeto React + TypeScript + Vite + Tailwind + shadcn/ui (o mesmo gerado pelo Lo
 
 Tema escuro. Em telas largas, os sensores ficam à esquerda e os controles à direita. No tablet, os controles vão para baixo em duas colunas e, no celular, em uma.
 
-- **Barra do topo (fixa)**: servidor, Arduino (porta), LiDAR 2D, câmera, L515 e modo (manual/autônomo, andando/parado). Bolinha verde = ok, amarela = esperando, cinza = desligado. O botão **PARAR** fica sempre visível: para os motores e desliga o modo autônomo.
+- **Barra do topo (fixa)**: servidor, Arduino (porta), LiDAR 2D, C270, D435 e modo (manual/autônomo, andando/parado). Bolinha verde = ok, amarela = esperando, cinza = desligado. O botão **PARAR** fica sempre visível: para os motores e desliga o modo autônomo.
 - **Mapa de pontos do LiDAR 2D**: vista de cima, frente para cima. Os pontos são coloridos pela distância (vermelho < 0,5 m, âmbar < 1 m, ciano mais longe). Os setores da navegação aparecem em verde ou vermelho. Tem zoom de 2/4/8 m e a opção **Rastro**, que mantém os últimos ~1 s de leituras. Embaixo: quantidade de pontos, taxa de atualização, ponto mais perto (distância e ângulo) e caminho livre à frente. Sem leituras, o painel mostra **"Aguardando o LiDAR 2D"** com a dica do que fazer.
-- **Câmera**: imagem da C270 com as caixas do YOLO por cima (switch do YOLO no canto). Se a L515 estiver ligada, aparecem botões para trocar de câmera.
-- **Obstáculos à frente**: distâncias por setor (esquerda, centro, direita), no chão (LiDAR) e na altura (YOLO/L515).
+- **Câmeras**: C270 (frontal) e, embaixo, a D435, cada uma com seu status e sua tela de espera. As caixas do YOLO aparecem na câmera onde o objeto foi visto (switch do YOLO no canto).
+- **Obstáculos à frente**: distâncias por setor (esquerda, centro, direita), no chão (LiDAR) e na altura (D435/YOLO).
 - **Controle manual**: direcional (WASD/setas, Q/E giro, espaço para) ou por motor.
 - **Modo autônomo**: switch, o que o robô está fazendo e a velocidade.
 - **Voz**: último comando de voz recebido (do José ou do navegador) e o microfone do navegador.
@@ -544,14 +543,14 @@ Endereço: `ws://<host>:8765`. Todas as mensagens são JSON com um campo `type`.
 | `timestamp` | sempre | tempo do backend |
 | `robot_moving` | sempre | se o robô está andando |
 | `tablet_connected` | sempre | se o tablet mandou heartbeat nos últimos 5 s |
-| `sensors_status` | sempre | `{camera, l515, lidar}` com `online`, `name`, `kind` (`usb`, `realsense`, `ld06`, `rplidar`, `sim`), `port` |
+| `sensors_status` | sempre | `{camera, realsense, lidar}` com `online`, `name`, `kind` (`usb`, `realsense`, `ld06`, `rplidar`, `sim`), `port` |
 | `tracking_mode` | sempre | `basic`, `yolo` ou `error` |
-| `camera_image` | com câmera | JPEG em base64 da câmera principal (C270, ou L515 se for a única) |
-| `l515_image` | com L515 | JPEG em base64 da L515 |
+| `camera_image` | com câmera | JPEG em base64 da câmera principal (C270, ou a D435 se for a única) |
+| `realsense_image` | com D435 | JPEG em base64 da D435 |
 | `lidar_scan` | com LiDAR | `{angles: [graus], ranges: [metros]}`, até 360 pontos |
 | `ground_obstacles` | com LiDAR | `{left, center, right, distances: {left, center, right}, path_distance, sensor: "LIDAR2D"}` |
-| `height_obstacles` | com L515 ou YOLO | mesmo formato dos setores |
-| `tracked_objects` | com YOLO ou L515 | lista de `{id, bbox: {x,y,w,h}, centroid: {x,y}, class_name, confidence, camera, depth, position_3d}` |
+| `height_obstacles` | com D435 ou YOLO | mesmo formato dos setores |
+| `tracked_objects` | com YOLO ou D435 | lista de `{id, bbox: {x,y,w,h}, centroid: {x,y}, class_name, confidence, camera, depth, position_3d}` |
 | `navigation_status` | modo autônomo | `{active, direction, speed, reason, detection: {mode, sensor, obstacles, distances}}`; ao desligar vem `{active: false}` |
 | `navigation` | modo autônomo | igual a `navigation_status` (mantido por compatibilidade) |
 
@@ -600,7 +599,7 @@ Ou só o backend: `cd backend && ~/L515/bin/python -m unittest discover -s tests
 | Arquivo | O que testa |
 |---------|-------------|
 | `test_lidar_protocols.py` | Tabela CRC do LD06 (confere com o datasheet), pacotes com lixo/cortados/CRC errado, volta passando por 0°; amostras do RPLIDAR e ressincronização; conversão de ângulos (horário → robô, offset, flip, leituras inválidas) |
-| `test_navigation.py` | Setores do LiDAR, corredor, junção de sensores, altura e tracker da L515 (profundidade sintética), decisões do navegador, Arduino simulado igual ao `.ino`, direções dos comandos; **teste em malha fechada**: o navegador dirige o robô simulado por 3 minutos partindo de 3 pontos diferentes — precisa andar, explorar e **não bater nenhuma vez** |
+| `test_navigation.py` | Setores do LiDAR, corredor, junção de sensores, altura e tracker da D435 (profundidade sintética), decisões do navegador, Arduino simulado igual ao `.ino`, direções dos comandos; **teste em malha fechada**: o navegador dirige o robô simulado por 3 minutos partindo de 3 pontos diferentes — precisa andar, explorar e **não bater nenhuma vez** |
 | `test_server.py` | Sobe o backend `--sim` de verdade e conversa por WebSocket com as mesmas mensagens do frontend: estado inicial, imagem JPEG válida, LiDAR, direção manual (o robô anda para onde aponta), modo autônomo e parada de emergência, desconectar/reconectar o Arduino, porta inexistente, mensagens inválidas, tablet, parada ao fechar o navegador |
 | `test_yolo.py` | YOLO de verdade na foto de exemplo do ultralytics (ônibus com pessoas), com câmera sem profundidade: as pessoas recebem a distância do LiDAR certa conforme o lado da imagem |
 | frontend | `tsc` (tipos) e `vite build` |
@@ -630,7 +629,7 @@ Resultado atual: **29 testes OK** e frontend compilando.
    ```
    SENSORES:
      Câmera: C270
-     L515:   ✗ OFFLINE
+     RealSense: D435
      LiDAR:  LD06 em /dev/ttyUSB1
    ```
 4. Se o LiDAR não for achado: `./start.sh --lidar ld06 --lidar-port /dev/ttyUSB1` (ou `rplidar`).
@@ -653,7 +652,7 @@ Resultado atual: **29 testes OK** e frontend compilando.
 | LiDAR não detectado | Passe `--lidar` e `--lidar-port`; confira a velocidade (`--lidar-baud`) |
 | Radar girado ou espelhado | `--lidar-offset` / `--lidar-flip` |
 | Webcam errada (ex.: a do notebook) | `--camera-device /dev/videoN` (veja `v4l2-ctl --list-devices`) |
-| L515 não aparece | A build 2.54 precisa estar em `~/librealsense/build/wrappers/python` (ou `RAS_REALSENSE_DIR`). Teste com `realsense-viewer` |
+| D435 não aparece | Use uma porta USB 3 (azul) e teste com `realsense-viewer`; `./start.sh --realsense on` força a tentativa e mostra o erro |
 | YOLO demora para ligar | Normal na primeira vez (carrega o modelo); se `yolov8n.pt` faltar, o ultralytics baixa (precisa de internet) |
 | Tablet não conecta | `./start.sh --lan` e abrir `http://<ip>:8080/tablet` na mesma rede |
 | Porta 8080 ocupada | Outro `start.sh`/Vite rodando: feche-o (`pkill -f vite`) |
@@ -663,7 +662,6 @@ Resultado atual: **29 testes OK** e frontend compilando.
 
 ## 15. Próximos passos sugeridos
 
-- **Remover a L515** quando ela sair do robô: basta rodar com `--l515 off` (ou deixar `auto`, que ignora se não estiver conectada).
 - **Repetir o comando manual** enquanto a tecla estiver pressionada (e parar ao soltar), em vez de um comando por toque — mais seguro.
 - **Watchdog no Arduino**: parar os motores se não chegar comando em ~0,5 s (protege contra queda do notebook/USB).
 - **Mapa (SLAM)** com o LiDAR 2D, por exemplo com ROS 2 (já existe `~/ros2_ws`) ou uma biblioteca Python como BreezySLAM.

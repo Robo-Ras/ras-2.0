@@ -51,9 +51,9 @@ export const ObstaclePanel = ({ ground, height }: { ground?: ObstacleData; heigh
         Obstáculos à frente
       </CardTitle>
     </CardHeader>
-    <CardContent className="space-y-4">
+    <CardContent className="grid gap-4 md:grid-cols-2">
       <Row title="Chão" source="LiDAR 2D" data={ground} />
-      <Row title="Altura" source="câmera (YOLO) / L515" data={height} />
+      <Row title="Altura" source="D435 (profundidade) / YOLO" data={height} />
     </CardContent>
   </Card>
 );

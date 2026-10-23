@@ -77,7 +77,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(sector, data['ground_obstacles']['distances'])
             self.assertTrue(data['sensors_status']['camera']['online'])
             self.assertTrue(data['sensors_status']['lidar']['online'])
-            self.assertFalse(data['sensors_status']['l515']['online'])
+            self.assertFalse(data['sensors_status']['realsense']['online'])
             self.assertEqual(data['tracking_mode'], 'basic')
 
     async def test_manual_drive_moves_simulated_robot(self):

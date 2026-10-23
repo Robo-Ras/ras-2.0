@@ -51,7 +51,7 @@ class ObstacleTest(unittest.TestCase):
         self.assertTrue(merged['left'] and merged['center'] and not merged['right'])
         self.assertIsNone(merge_obstacles(None, None))
 
-    def test_l515_height_and_basic_tracker(self):
+    def test_realsense_height_and_basic_tracker(self):
         depth = np.full((480, 640), 4.0, dtype=np.float32)
         depth[150:330, 40:180] = 0.6  # caixa à esquerda a 60 cm
         height = ObstacleDetector().analyze_height(depth)

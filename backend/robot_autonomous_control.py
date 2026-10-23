@@ -2,7 +2,7 @@
 Sistema de Controle Autônomo do RAS (robô tri-omni)
 - Câmera RGB USB Logitech C270 (frontal)
 - LiDAR 2D (RPLIDAR ou LD06/LD19) para obstáculos ao redor do robô
-- Intel RealSense L515 (opcional, ainda suportado enquanto estiver no robô)
+- Intel RealSense D435: imagem + profundidade
 - Modo --sim: robô, Arduino, câmera e LiDAR simulados para testar sem hardware
 
 Uso:
@@ -47,7 +47,7 @@ VOICE_PENDING = {'me_segue', 'lado_direito', 'lado_esquerdo'}
 
 
 class ObjectTracker:
-    """Rastreia objetos detectados pela profundidade (L515)"""
+    """Rastreia objetos detectados pela profundidade (RealSense)"""
 
     def __init__(self, max_disappeared=10, min_area=5000, max_distance=2.0, min_distance=0.5):
         self.next_object_id = 0
@@ -285,7 +285,7 @@ class ObstacleDetector:
                 'center': center_status['distance'],
                 'right': right_status['distance']
             },
-            'sensor': 'L515'
+            'sensor': 'RealSense'
         }
 
 
@@ -505,15 +505,15 @@ class RobotController:
 
 
 class SensorManager:
-    """Câmera principal (C270), L515 opcional e LiDAR 2D"""
+    """Câmera frontal (C270), RealSense D435 e LiDAR 2D"""
 
-    def __init__(self, camera=None, l515=None, lidar=None):
+    def __init__(self, camera=None, realsense=None, lidar=None):
         self.camera = camera
-        self.l515 = l515
+        self.realsense = realsense
         self.lidar = lidar
 
     def start(self):
-        for attr in ('camera', 'l515', 'lidar'):
+        for attr in ('camera', 'realsense', 'lidar'):
             sensor = getattr(self, attr)
             if sensor is None:
                 continue
@@ -528,14 +528,14 @@ class SensorManager:
         print(f"\n{'='*50}")
         print("SENSORES:")
         print(f"  Câmera: {self.camera.name if self.camera else '✗ OFFLINE'}")
-        print(f"  L515:   {'✓ FUNCIONANDO' if self.l515 else '✗ OFFLINE'}")
+        print(f"  RealSense: {self.realsense.name if self.realsense else '✗ OFFLINE'}")
         print(f"  LiDAR:  {self.lidar.name + ' em ' + str(self.lidar.port) if self.lidar else '✗ OFFLINE'}")
         print(f"{'='*50}\n")
 
     def capture(self):
         """Lê um frame de cada câmera: {nome: {'camera', 'color', 'depth'}}"""
         frames = {}
-        for key, cam in (('camera', self.camera), ('l515', self.l515)):
+        for key, cam in (('camera', self.camera), ('realsense', self.realsense)):
             if cam is None:
                 continue
             color, depth = cam.read()
@@ -549,10 +549,10 @@ class SensorManager:
     def status(self):
         def st(sensor):
             return sensor.status() if sensor else {'online': False}
-        return {'camera': st(self.camera), 'l515': st(self.l515), 'lidar': st(self.lidar)}
+        return {'camera': st(self.camera), 'realsense': st(self.realsense), 'lidar': st(self.lidar)}
 
     def stop(self):
-        for sensor in (self.camera, self.l515, self.lidar):
+        for sensor in (self.camera, self.realsense, self.lidar):
             if sensor:
                 try:
                     sensor.stop()
@@ -794,7 +794,7 @@ class WebSocketServer:
         self.robot_moving = False
 
     async def set_yolo(self, enabled):
-        if enabled and self.sensors.camera is None and self.sensors.l515 is None:
+        if enabled and self.sensors.camera is None and self.sensors.realsense is None:
             await self.send_to_all({'type': 'yolo_status', 'enabled': False,
                                     'error': 'Nenhuma câmera disponível'})
             return
@@ -837,10 +837,10 @@ class WebSocketServer:
                 tracked = self.yolo_tracker.get_tracked_objects()
                 message['tracked_objects'] = tracked
                 message['tracking_mode'] = 'yolo'
-                main = frames.get('camera') or frames.get('l515')
+                main = frames.get('camera') or frames.get('realsense')
                 width = main['color'].shape[1] if main else 640
                 height_obstacles = self._convert_tracking_to_obstacles(
-                    [o for o in tracked if o['camera'] == ('camera' if 'camera' in frames else 'l515')], width)
+                    [o for o in tracked if o['camera'] == ('camera' if 'camera' in frames else 'realsense')], width)
             except Exception as e:
                 print(f"❌ Erro no YOLO tracking: {e}")
                 import traceback
@@ -850,33 +850,33 @@ class WebSocketServer:
             message['tracking_mode'] = 'basic'
             for data in frames.values():
                 data['annotated'] = data['color']
-            l515 = frames.get('l515')
-            if l515 is not None and l515['depth'] is not None:
-                self.basic_tracker.update(l515['depth'])
+            realsense = frames.get('realsense')
+            if realsense is not None and realsense['depth'] is not None:
+                self.basic_tracker.update(realsense['depth'])
                 tracked = self.basic_tracker.get_tracked_objects()
-                annotated = l515['color'].copy()
+                annotated = realsense['color'].copy()
                 for obj in tracked:
                     b = obj['bbox']
                     cv2.rectangle(annotated, (b['x'], b['y']), (b['x'] + b['w'], b['y'] + b['h']), (0, 255, 0), 2)
                     cv2.putText(annotated, f"ID:{obj['id']} {obj['depth']:.2f}m", (b['x'], b['y'] - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                l515['annotated'] = annotated
+                realsense['annotated'] = annotated
                 message['tracked_objects'] = tracked
 
-        l515 = frames.get('l515')
-        if l515 is not None and l515['depth'] is not None and height_obstacles is None:
-            height_obstacles = self.detector.analyze_height(l515['depth'])
+        realsense = frames.get('realsense')
+        if realsense is not None and realsense['depth'] is not None and height_obstacles is None:
+            height_obstacles = self.detector.analyze_height(realsense['depth'])
         if height_obstacles:
             message['height_obstacles'] = height_obstacles
 
-        # Câmera principal = C270; se só houver L515, ela vira a principal
+        # Câmera principal = C270; se só houver a RealSense, ela vira a principal
         if 'camera' in frames:
             message['camera_image'] = encode_jpeg(frames['camera']['annotated'])
-            if l515 is not None:
-                message['l515_image'] = encode_jpeg(l515['annotated'])
-        elif l515 is not None:
-            message['camera_image'] = encode_jpeg(l515['annotated'])
-            message['l515_image'] = message['camera_image']
+            if realsense is not None:
+                message['realsense_image'] = encode_jpeg(realsense['annotated'])
+        elif realsense is not None:
+            message['camera_image'] = encode_jpeg(realsense['annotated'])
+            message['realsense_image'] = message['camera_image']
 
         message['sensors_status'] = self.sensors.status()
         return message
@@ -982,7 +982,7 @@ async def run_until_signal(server, host, port):
 def build_system(args):
     """Monta sensores, robô e servidor a partir das opções de linha de comando"""
     world = None
-    camera = l515 = lidar = None
+    camera = realsense = lidar = None
     lidar_kwargs = {'angle_offset_deg': args.lidar_offset, 'flip': args.lidar_flip}
 
     if args.sim:
@@ -1001,10 +1001,14 @@ def build_system(args):
             if args.camera == 'auto' and device is None and not sensors.find_usb_cameras():
                 camera = None
 
-        if args.l515 != 'off':
+        if args.realsense != 'off':
+            # Usa a primeira RealSense conectada (a D435)
             devices = sensors.RealSenseCamera.list_devices()
-            if any('L515' in name for name, _ in devices) or args.l515 == 'on':
-                l515 = sensors.RealSenseCamera('L515')
+            if devices:
+                name, serial_number = devices[0]
+                realsense = sensors.RealSenseCamera(name, serial_number)
+            elif args.realsense == 'on':
+                realsense = sensors.RealSenseCamera('RealSense')
 
         if args.lidar != 'none':
             kind, port = args.lidar, args.lidar_port
@@ -1023,7 +1027,7 @@ def build_system(args):
             else:
                 print("⚠ Nenhum LiDAR 2D encontrado")
 
-    sensor_manager = SensorManager(camera, l515, lidar)
+    sensor_manager = SensorManager(camera, realsense, lidar)
     robot = RobotController(sim_world=world)
     if lidar is not None and lidar.port and lidar.port != 'SIM':
         robot.reserved_ports.add(lidar.port)
@@ -1040,7 +1044,8 @@ def parse_args(argv=None):
                         help="câmera RGB principal (C270)")
     parser.add_argument('--camera-device', help="ex.: /dev/video2 ou 2 (padrão: procura a C270)")
     parser.add_argument('--camera-fov', type=float, default=60.0, help="campo de visão horizontal em graus")
-    parser.add_argument('--l515', choices=['auto', 'on', 'off'], default='auto')
+    parser.add_argument('--realsense', choices=['auto', 'on', 'off'], default='auto',
+                        help="câmera de profundidade RealSense D435")
     parser.add_argument('--lidar', choices=['auto', 'ld06', 'rplidar', 'rplidar-c1', 'none'], default='auto')
     parser.add_argument('--lidar-port', help="ex.: /dev/ttyUSB1")
     parser.add_argument('--lidar-baud', type=int)
@@ -1057,7 +1062,7 @@ def main(argv=None):
     args = parse_args(argv)
     print("\n" + "="*70)
     print("  SISTEMA DE NAVEGAÇÃO AUTÔNOMA - ROBÔ TRI-OMNI (RAS 2.0)")
-    print("  " + ("MODO SIMULAÇÃO" if args.sim else "C270 + LiDAR 2D (+ L515 opcional)"))
+    print("  " + ("MODO SIMULAÇÃO" if args.sim else "C270 + D435 + LiDAR 2D"))
     print("="*70)
 
     # SIGTERM (ex.: start.sh encerrando) vira Ctrl+C, para sempre parar os motores ao sair

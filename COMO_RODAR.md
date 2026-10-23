@@ -39,7 +39,7 @@ Bom para conferir que está tudo instalado antes de ligar o robô de verdade.
 ## 3. Rodar no robô
 
 1. Ligue a bateria do robô.
-2. Conecte no notebook, por USB: o Arduino, o LiDAR e a câmera C270 (e a L515, se estiver no robô).
+2. Conecte no notebook, por USB: o Arduino, o LiDAR, a câmera C270 e a D435 (a D435 numa porta USB 3, azul).
 3. Coloque o robô **no chão, com espaço livre em volta**, ou com as rodas fora do chão no primeiro teste.
 4. Rode:
 

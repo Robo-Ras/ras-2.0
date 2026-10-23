@@ -14,7 +14,7 @@ Frontend (React/Vite) e backend (Python) rodam juntos no notebook, sem depender 
 - Robô omnidirecional com 3 motores DC + Arduino (`arduino/arduino_robot_control.ino`)
 - **Logitech C270**: câmera RGB frontal (YOLO)
 - **LiDAR 2D**: LDROBOT LD06/LD19 ou Slamtec RPLIDAR A1/A2/C1 (obstáculos ao redor)
-- **Intel RealSense L515** (opcional): continua funcionando enquanto estiver no robô
+- **Intel RealSense D435**: câmera de cor + profundidade (obstáculos na altura e distância dos objetos)
 - Tablet (opcional) para a "carinha" de status em `/tablet`
 
 ## ▶️ Rodando
@@ -39,7 +39,7 @@ Na primeira vez o script instala as dependências do frontend (`npm ci`). O Pyth
 | `--lidar ld06 --lidar-port /dev/ttyUSB1` | Escolher o LiDAR (padrão: detecta sozinho) |
 | `--lidar-offset 180` / `--lidar-flip` | Alinhar o 0° do LiDAR com a frente do robô |
 | `--camera-device /dev/video2` | Escolher a webcam (padrão: procura a C270) |
-| `--l515 off` | Ignorar a L515 |
+| `--realsense off` | Ignorar a D435 |
 | `--no-browser` | Não abrir o navegador |
 | `--voz` | Assistente de voz José; rosto em http://localhost:8090 ([voz/README.md](voz/README.md)) |
 
@@ -71,23 +71,23 @@ autônomo e o YOLO normalmente.
 | `start.sh` | Sobe backend + frontend juntos |
 | `test.sh` | Testes internos |
 | `backend/robot_autonomous_control.py` | Servidor WebSocket (8765), obstáculos, navegação, Arduino |
-| `backend/sensors.py` | C270 (OpenCV), L515 (librealsense 2.54), LiDAR LD06 e RPLIDAR |
+| `backend/sensors.py` | C270 (OpenCV), D435 (librealsense), LiDAR LD06 e RPLIDAR |
 | `backend/simulator.py` | Mundo simulado, Arduino virtual, LiDAR e câmera sintéticos |
-| `backend/robot_tracking_system.py` | YOLO + filtro de Kalman; distância pela L515 ou pelo LiDAR |
+| `backend/robot_tracking_system.py` | YOLO + filtro de Kalman; distância pela D435 ou pelo LiDAR |
 | `frontend/src/pages/Index.tsx` | Painel principal |
 | `frontend/src/pages/TabletStatus.tsx` | Tela do tablet |
 | `frontend/src/components/Lidar2DView.tsx` | Mapa de pontos do LiDAR 2D |
 | `frontend/src/lib/ws.ts` | Endereço do backend (mesmo host da página, ou `VITE_WS_URL`) |
 
-### L515 e librealsense
+### D435 e librealsense
 
-O suporte ao L515 saiu da librealsense 2.55+. O `pyrealsense2` do pip (2.56) não enxerga a
-câmera, então o backend carrega a build 2.54 de `~/librealsense/build/wrappers/python`
-(troque com `RAS_REALSENSE_DIR`). Não é mais preciso rodar de dentro dessa pasta.
+Se existir a build local da librealsense em `~/librealsense/build/wrappers/python` (troque com
+`RAS_REALSENSE_DIR`), o backend usa ela; senão, usa o `pyrealsense2` do pip. A D435 funciona com as duas.
+Ligue a D435 numa porta USB 3 (azul): em USB 2 ela pode não abrir os fluxos de cor e profundidade.
 
 ## Navegação autônoma
 
-A cada 100 ms o backend junta os obstáculos de todos os sensores (LiDAR 2D, L515, YOLO):
+A cada 100 ms o backend junta os obstáculos de todos os sensores (LiDAR 2D, D435, YOLO):
 
 1. Se há algo no **corredor à frente** (largura do robô + margem) a menos de 0,8 m, gira para o
    lado com mais espaço e continua girando até o caminho abrir

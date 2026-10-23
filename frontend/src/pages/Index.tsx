@@ -25,7 +25,7 @@ const Index = () => {
   const [robotMoving, setRobotMoving] = useState(false);
   const [autonomousSpeed, setAutonomousSpeed] = useState(100);
   const [cameraImage, setCameraImage] = useState<string>();
-  const [l515Image, setL515Image] = useState<string>();
+  const [realsenseImage, setRealsenseImage] = useState<string>();
   const [sensorsStatus, setSensorsStatus] = useState<SensorsStatus>();
   const [lidarScan, setLidarScan] = useState<LidarScan>();
   const [groundObstacles, setGroundObstacles] = useState<any>();
@@ -60,9 +60,9 @@ const Index = () => {
         console.log('📩 Mensagem recebida do servidor:', data.type);
         
         if (data.type === 'sensor_data') {
-          // Imagens: câmera principal (C270) e L515 opcional
+          // Imagens: C270 (frontal) e RealSense D435
           setCameraImage(data.camera_image);
-          setL515Image(data.l515_image);
+          setRealsenseImage(data.realsense_image);
           setSensorsStatus(data.sensors_status);
           setLidarScan(data.lidar_scan);
           setRobotMoving(!!data.robot_moving);
@@ -260,20 +260,19 @@ const Index = () => {
                 sensor={sensorsStatus?.lidar}
                 backendConnected={isConnected}
               />
-              <div className="space-y-4">
-                <CameraPanel
-                  cameraImage={cameraImage}
-                  l515Image={l515Image}
-                  cameraLabel={sensorsStatus?.camera?.kind === "sim" ? "Câmera simulada" : sensorsStatus?.camera?.name ?? "Câmera C270"}
-                  backendConnected={isConnected}
-                  trackedObjects={trackedObjects}
-                  trackingMode={trackingMode}
-                  yoloEnabled={yoloEnabled}
-                  onToggleYolo={handleToggleYolo}
-                />
-                <ObstaclePanel ground={groundObstacles} height={heightObstacles} />
-              </div>
+              <CameraPanel
+                cameraImage={cameraImage}
+                realsenseImage={realsenseImage}
+                camera={sensorsStatus?.camera}
+                realsense={sensorsStatus?.realsense}
+                backendConnected={isConnected}
+                trackedObjects={trackedObjects}
+                trackingMode={trackingMode}
+                yoloEnabled={yoloEnabled}
+                onToggleYolo={handleToggleYolo}
+              />
             </div>
+            <ObstaclePanel ground={groundObstacles} height={heightObstacles} />
           </section>
 
           {/* Controles */}

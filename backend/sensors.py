@@ -1,7 +1,7 @@
 """
 Sensores do robô
 - Câmera RGB USB (Logitech C270 ou qualquer webcam UVC)
-- Intel RealSense L515 (opcional, RGB + profundidade)
+- Intel RealSense D435 (RGB + profundidade)
 - LiDAR 2D: Slamtec RPLIDAR (A1/A2/C1) ou LDROBOT LD06/LD19
 
 Convenção de ângulos do LiDAR (referencial do robô):
@@ -26,8 +26,8 @@ import serial.tools.list_ports
 # RealSense
 # ---------------------------------------------------------------------------
 
-# O suporte ao L515 foi removido na librealsense 2.55+, então o pyrealsense2 do pip
-# (2.56) não enxerga o L515. Usamos a build local 2.54 quando ela existir.
+# Se existir a build local da librealsense (2.54, compilada no notebook), ela é usada;
+# senão, o pyrealsense2 do pip. A D435 funciona com as duas.
 REALSENSE_BUILD_DIR = os.environ.get(
     'RAS_REALSENSE_DIR',
     os.path.expanduser('~/librealsense/build/wrappers/python'),
@@ -35,7 +35,7 @@ REALSENSE_BUILD_DIR = os.environ.get(
 
 
 def load_pyrealsense2():
-    """Importa o pyrealsense2, preferindo a build local (compatível com L515)"""
+    """Importa o pyrealsense2, preferindo a build local"""
     if 'pyrealsense2' in sys.modules:
         return sys.modules['pyrealsense2']
 
@@ -110,7 +110,7 @@ def find_usb_cameras():
         except OSError:
             continue
         if vid == '8086' or 'RealSense' in name:
-            continue  # L515/D435 também aparecem como webcam; são tratadas pelo RealSenseCamera
+            continue  # a D435 também aparece como webcam; ela é tratada pelo RealSenseCamera
         cameras.append(('/dev/' + os.path.basename(path), name, f'{vid}:{pid}'))
 
     def is_c270(cam):
@@ -185,7 +185,7 @@ class UsbCamera(CameraBase):
 
 
 class RealSenseCamera(CameraBase):
-    """Intel RealSense L515 (ou D435) com profundidade alinhada à imagem colorida"""
+    """Intel RealSense D435 com profundidade alinhada à imagem colorida"""
 
     kind = 'realsense'
     has_depth = True
@@ -194,9 +194,10 @@ class RealSenseCamera(CameraBase):
     # Tentadas em ordem: (profundidade WxH, cor WxH)
     PROFILES = [((640, 480), (640, 480)), ((320, 240), (640, 480)), None]
 
-    def __init__(self, model='L515', serial_number=None):
+    def __init__(self, model='RealSense', serial_number=None):
         super().__init__()
-        self.name = model
+        # "Intel RealSense D435" -> "D435"
+        self.name = model.replace('Intel RealSense', '').strip() or model
         self.serial_number = serial_number
         self.rs = None
         self.pipeline = None

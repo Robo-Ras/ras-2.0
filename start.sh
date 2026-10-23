@@ -2,7 +2,7 @@
 # Sobe o backend (Python, WebSocket :8765) e o frontend (Vite, http://localhost:8080) juntos.
 # Ctrl+C encerra os dois.
 #
-#   ./start.sh                 hardware real (C270 + LiDAR 2D + L515 se conectada)
+#   ./start.sh                 hardware real (C270 + D435 + LiDAR 2D)
 #   ./start.sh --sim           sem o robô: robô, Arduino, câmera e LiDAR simulados
 #   ./start.sh --lan           permite abrir pelo tablet: http://<ip-do-notebook>:8080/tablet
 #   ./start.sh --no-browser    não abre o navegador

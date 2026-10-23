@@ -9,8 +9,8 @@ export interface SensorInfo {
 }
 
 export interface SensorsStatus {
-  camera?: SensorInfo;
-  l515?: SensorInfo;
+  camera?: SensorInfo; // C270
+  realsense?: SensorInfo; // D435
   lidar?: SensorInfo;
 }
 
@@ -75,8 +75,12 @@ export const StatusBar = ({
             detail={isArduinoConnected ? (arduinoPort === "SIM" ? "SIM (simulado)" : arduinoPort ?? "Conectado") : "Desconectado"}
           />
           <Pill label="LiDAR 2D" tone={sensor(sensors?.lidar)} detail={sensorDetail(sensors?.lidar, "Aguardando")} />
-          <Pill label="Câmera" tone={sensor(sensors?.camera)} detail={sensorDetail(sensors?.camera)} />
-          <Pill label="L515" tone={sensors?.l515?.online ? "ok" : "off"} detail={sensors?.l515?.online ? "Online" : "Não usada"} />
+          <Pill label="C270" tone={sensor(sensors?.camera)} detail={sensorDetail(sensors?.camera)} />
+          <Pill
+            label="D435"
+            tone={sensors?.camera?.kind === "sim" ? "off" : sensor(sensors?.realsense)}
+            detail={sensors?.camera?.kind === "sim" ? "Não simulada" : sensorDetail(sensors?.realsense)}
+          />
           <Pill
             label="Modo"
             tone={autonomousMode ? "info" : robotMoving ? "ok" : "off"}

@@ -1,7 +1,7 @@
 """
 Sistema de Rastreamento de Objetos com YOLO
-- Funciona com qualquer câmera de sensors.py (C270, L515, simulada)
-- Distância do objeto: profundidade da câmera (L515) ou, sem profundidade (C270),
+- Funciona com qualquer câmera de sensors.py (C270, D435, simulada)
+- Distância do objeto: profundidade da câmera (D435) ou, sem profundidade (C270),
   a leitura do LiDAR 2D na mesma direção do objeto
 """
 
