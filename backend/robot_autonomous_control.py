@@ -967,6 +967,18 @@ class WebSocketServer:
             sensor_task.cancel()
 
 
+async def run_until_signal(server, host, port):
+    """Ctrl+C/SIGTERM cancelam o servidor dentro do loop, para as conexões fecharem antes do loop acabar"""
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, task.cancel)
+    try:
+        await server.start_server(host, port)
+    except asyncio.CancelledError:
+        pass
+
+
 def build_system(args):
     """Monta sensores, robô e servidor a partir das opções de linha de comando"""
     world = None
@@ -1063,7 +1075,8 @@ def main(argv=None):
         print("  - Use os controles para mover o robô manualmente")
         print("  - Ative o modo autônomo para navegação com desvio")
         print(f"{'='*70}\n")
-        asyncio.run(server.start_server(args.host, args.port))
+        asyncio.run(run_until_signal(server, args.host, args.port))
+        print("\n\n⚠️  Interrompido pelo usuário")
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrompido pelo usuário")
     finally:
