@@ -76,7 +76,7 @@ autônomo e o YOLO normalmente.
 | `backend/robot_tracking_system.py` | YOLO + filtro de Kalman; distância pela L515 ou pelo LiDAR |
 | `frontend/src/pages/Index.tsx` | Painel principal |
 | `frontend/src/pages/TabletStatus.tsx` | Tela do tablet |
-| `frontend/src/components/Lidar2DView.tsx` | Radar do LiDAR 2D |
+| `frontend/src/components/Lidar2DView.tsx` | Mapa de pontos do LiDAR 2D |
 | `frontend/src/lib/ws.ts` | Endereço do backend (mesmo host da página, ou `VITE_WS_URL`) |
 
 ### L515 e librealsense

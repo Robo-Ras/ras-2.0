@@ -64,6 +64,9 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Não dirige o robô enquanto alguém digita num campo (ex.: velocidade)
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
       switch (event.key.toLowerCase()) {
         case 'w':
         case 'arrowup':
@@ -101,118 +104,64 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
     };
   }, [moveForward, moveBackward, moveRight, moveLeft, stop, rotateClockwise, rotateCounterClockwise]);
 
+  const padButton = (dir: string, onClick: () => void, icon: React.ReactNode, label: string) => (
+    <Button
+      onClick={onClick}
+      variant={activeDirection === dir ? 'default' : 'secondary'}
+      className="h-14 w-full p-0"
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+    </Button>
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="text-center space-y-2">
-        <h3 className="text-lg font-semibold">Controle Direcional</h3>
-        <p className="text-sm text-muted-foreground">
-          Use WASD, setas ou clique nos botões. Q/E para rotação. Espaço para parar.
-        </p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto">
+        {padButton('counterclockwise', rotateCounterClockwise, <RotateCcw size={20} />, 'Girar anti-horário (Q)')}
+        {padButton('forward', moveForward, <ArrowUp size={24} />, 'Frente (W)')}
+        {padButton('clockwise', rotateClockwise, <RotateCw size={20} />, 'Girar horário (E)')}
+        {padButton('left', moveLeft, <ArrowLeft size={24} />, 'Esquerda (A)')}
+        <Button onClick={stop} variant="destructive" className="h-14 w-full p-0" aria-label="Parar (espaço)" title="Parar (espaço)">
+          <Square size={22} />
+        </Button>
+        {padButton('right', moveRight, <ArrowRight size={24} />, 'Direita (D)')}
+        <div />
+        {padButton('backward', moveBackward, <ArrowDown size={24} />, 'Trás (S)')}
+        <div />
       </div>
 
-      <div className="space-y-4 max-w-md mx-auto">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Velocidade: {speed}</label>
-          <div className="flex gap-4 items-center">
-            <Slider
-              value={[speed]}
-              onValueChange={(value) => setSpeed(value[0])}
-              min={0}
-              max={255}
-              step={1}
-              className="flex-1"
-            />
-            <Input
-              type="number"
-              value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-              min={0}
-              max={255}
-              className="w-20"
-            />
-          </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium">Velocidade</span>
+          <Input
+            type="number"
+            value={speed}
+            onChange={(e) => setSpeed(Math.max(0, Math.min(255, Number(e.target.value))))}
+            min={0}
+            max={255}
+            className="h-8 w-20 text-right tabular"
+          />
         </div>
+        <Slider value={[speed]} onValueChange={(value) => setSpeed(value[0])} min={0} max={255} step={1} />
       </div>
 
-      <div className="grid grid-cols-3 gap-4 max-w-xs mx-auto">
-        <div></div>
-        <Button
-          onClick={moveForward}
-          size="lg"
-          variant={activeDirection === 'forward' ? 'default' : 'outline'}
-          className="aspect-square p-0"
-        >
-          <ArrowUp size={24} />
-        </Button>
-        <div></div>
+      <p className="text-xs text-muted-foreground text-center">
+        Teclado: <kbd className="rounded bg-muted px-1">W A S D</kbd> ou setas · <kbd className="rounded bg-muted px-1">Q</kbd>/<kbd className="rounded bg-muted px-1">E</kbd> giram · <kbd className="rounded bg-muted px-1">espaço</kbd> para
+      </p>
 
-        <Button
-           onClick={moveLeft}
-           size="lg"
-           variant={activeDirection === 'left' ? 'default' : 'outline'}
-           className="aspect-square p-0"
-         >
-           <ArrowLeft size={24} />
-         </Button>
-         <Button
-           onClick={stop}
-           size="lg"
-           variant="destructive"
-           className="aspect-square p-0"
-         >
-           <Square size={24} />
-         </Button>
-         <Button
-           onClick={moveRight}
-           size="lg"
-           variant={activeDirection === 'right' ? 'default' : 'outline'}
-           className="aspect-square p-0"
-         >
-           <ArrowRight size={24} />
-         </Button>
-
-        <div></div>
-        <Button
-          onClick={moveBackward}
-          size="lg"
-          variant={activeDirection === 'backward' ? 'default' : 'outline'}
-          className="aspect-square p-0"
-        >
-          <ArrowDown size={24} />
-        </Button>
-        <div></div>
-      </div>
-
-      <div className="flex gap-4 max-w-xs mx-auto mt-4">
-        <Button
-          onClick={rotateCounterClockwise}
-          size="lg"
-          variant={activeDirection === 'counterclockwise' ? 'default' : 'outline'}
-          className="flex-1"
-        >
-          <RotateCcw size={20} className="mr-2" />
-          Anti-horário (Q)
-        </Button>
-        <Button
-          onClick={rotateClockwise}
-          size="lg"
-          variant={activeDirection === 'clockwise' ? 'default' : 'outline'}
-          className="flex-1"
-        >
-          <RotateCw size={20} className="mr-2" />
-          Horário (E)
-        </Button>
-      </div>
-
-      <div className="text-xs text-muted-foreground text-center space-y-1">
-         <p><strong>Comandos:</strong></p>
-         <p>Frente: M1={-speed}, M2=0, M3={speed}</p>
-         <p>Trás: M1={speed}, M2=0, M3={-speed}</p>
-         <p>Direita: M1=0, M2={speed}, M3={-speed}</p>
-         <p>Esquerda: M1=0, M2={-speed}, M3={speed}</p>
-         <p>Horário: M1={speed}, M2={speed}, M3={speed}</p>
-         <p>Anti-horário: M1={-speed}, M2={-speed}, M3={-speed}</p>
-       </div>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none">Valores enviados aos motores</summary>
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono tabular">
+          <span>Frente</span><span>{-speed}, 0, {speed}</span>
+          <span>Trás</span><span>{speed}, 0, {-speed}</span>
+          <span>Direita</span><span>0, {speed}, {-speed}</span>
+          <span>Esquerda</span><span>0, {-speed}, {speed}</span>
+          <span>Horário</span><span>{Math.round(speed * 0.6)} × 3</span>
+          <span>Anti-horário</span><span>{-Math.round(speed * 0.6)} × 3</span>
+        </div>
+      </details>
     </div>
   );
 };

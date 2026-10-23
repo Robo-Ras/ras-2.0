@@ -225,10 +225,10 @@ ras-2.0/
         ├── lib/ws.ts                 # endereço do backend
         ├── lib/voiceCommands.ts      # vocabulário de voz (o mesmo do José)
         └── components/
-            ├── Lidar2DView.tsx       # radar do LiDAR (novo)
-            ├── CameraStatus.tsx      # status dos sensores
-            ├── MultiCameraView.tsx   # imagens + YOLO
-            ├── SensorVisualization.tsx
+            ├── StatusBar.tsx         # barra fixa: status dos sensores + PARAR
+            ├── Lidar2DView.tsx       # mapa de pontos do LiDAR 2D (com tela de espera)
+            ├── CameraPanel.tsx       # câmera + caixas do YOLO (+ L515 se houver)
+            ├── ObstaclePanel.tsx     # distâncias por setor (chão e altura)
             ├── AutonomousControl.tsx
             ├── DirectionalControl.tsx
             ├── MotorSpeedControl.tsx
@@ -479,17 +479,20 @@ Projeto React + TypeScript + Vite + Tailwind + shadcn/ui (o mesmo gerado pelo Lo
 | `/` | `pages/Index.tsx` | Painel completo |
 | `/tablet` | `pages/TabletStatus.tsx` | Carinha: vermelha (desconectado), laranja (parado), verde (andando) |
 
-### Painel principal, de cima para baixo
+### Painel principal
 
-1. Status do servidor Python e do Arduino (com a porta conectada).
-2. Conexão serial (lista de portas vinda do backend).
-3. Modo autônomo: switch, velocidade, estado atual (avançando/girando) e distâncias, parada de emergência.
-4. Controle por voz: microfone do navegador (Chrome/Edge) e o último comando recebido pelo robô, venha do navegador ou do assistente José. Os dois mandam `{type: 'voice_command'}` e o backend faz um movimento curto (veja `voz/README.md`).
-5. **Status dos Sensores**: C270, LiDAR 2D, L515 (com selo "simulado" no `--sim`) e modo de tracking.
-6. Sistema de tracking (switch do YOLO) e imagens das câmeras (card da L515 só aparece se ela estiver ligada).
-7. **Radar do LiDAR 2D** (novo): vista de cima, frente para cima, setores verdes/vermelhos, zoom 2/4/8 m e a distância livre à frente.
-8. Câmera com objetos rastreados e cartões de obstáculos (LiDAR e câmera/L515).
-9. Controle direcional (WASD/setas, Q/E giro, espaço para) e controle por motor.
+Tema escuro. Em telas largas, os sensores ficam à esquerda e os controles à direita. No tablet, os controles vão para baixo em duas colunas e, no celular, em uma.
+
+- **Barra do topo (fixa)**: servidor, Arduino (porta), LiDAR 2D, câmera, L515 e modo (manual/autônomo, andando/parado). Bolinha verde = ok, amarela = esperando, cinza = desligado. O botão **PARAR** fica sempre visível: para os motores e desliga o modo autônomo.
+- **Mapa de pontos do LiDAR 2D**: vista de cima, frente para cima. Os pontos são coloridos pela distância (vermelho < 0,5 m, âmbar < 1 m, ciano mais longe). Os setores da navegação aparecem em verde ou vermelho. Tem zoom de 2/4/8 m e a opção **Rastro**, que mantém os últimos ~1 s de leituras. Embaixo: quantidade de pontos, taxa de atualização, ponto mais perto (distância e ângulo) e caminho livre à frente. Sem leituras, o painel mostra **"Aguardando o LiDAR 2D"** com a dica do que fazer.
+- **Câmera**: imagem da C270 com as caixas do YOLO por cima (switch do YOLO no canto). Se a L515 estiver ligada, aparecem botões para trocar de câmera.
+- **Obstáculos à frente**: distâncias por setor (esquerda, centro, direita), no chão (LiDAR) e na altura (YOLO/L515).
+- **Controle manual**: direcional (WASD/setas, Q/E giro, espaço para) ou por motor.
+- **Modo autônomo**: switch, o que o robô está fazendo e a velocidade.
+- **Voz**: último comando de voz recebido (do José ou do navegador) e o microfone do navegador.
+- **Arduino**: conexão serial e o guia de diagnóstico.
+
+Se o backend cair, uma faixa amarela avisa e a página tenta reconectar a cada 3 s.
 
 ### Endereço do backend
 

@@ -2,14 +2,16 @@ import { useState, useEffect, useRef } from "react";
 import DirectionalControl from "@/components/DirectionalControl";
 import MotorSpeedControl from "@/components/MotorSpeedControl";
 import VoiceControl from "@/components/VoiceControl";
-import { SensorVisualization } from "@/components/SensorVisualization";
-import { MultiCameraView } from "@/components/MultiCameraView";
-import { CameraStatus, type SensorsStatus } from "@/components/CameraStatus";
+import { StatusBar, type SensorsStatus } from "@/components/StatusBar";
+import { CameraPanel } from "@/components/CameraPanel";
+import { ObstaclePanel } from "@/components/ObstaclePanel";
 import { Lidar2DView, type LidarScan } from "@/components/Lidar2DView";
 import { AutonomousControl } from "@/components/AutonomousControl";
 import { SerialConnectionControl } from "@/components/SerialConnectionControl";
 import { ArduinoTroubleshooting } from "@/components/ArduinoTroubleshooting";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Gamepad2, Plug } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getWsUrl } from "@/lib/ws";
 import type { VoiceCommandEvent, VoiceCommandId } from "@/lib/voiceCommands";
@@ -20,6 +22,7 @@ const Index = () => {
   const [isArduinoConnected, setIsArduinoConnected] = useState(false);
   const [arduinoPort, setArduinoPort] = useState<string | null>(null);
   const [autonomousMode, setAutonomousMode] = useState(false);
+  const [robotMoving, setRobotMoving] = useState(false);
   const [autonomousSpeed, setAutonomousSpeed] = useState(100);
   const [cameraImage, setCameraImage] = useState<string>();
   const [l515Image, setL515Image] = useState<string>();
@@ -62,6 +65,7 @@ const Index = () => {
           setL515Image(data.l515_image);
           setSensorsStatus(data.sensors_status);
           setLidarScan(data.lidar_scan);
+          setRobotMoving(!!data.robot_moving);
 
           // Dados de obstáculos
           setGroundObstacles(data.ground_obstacles);
@@ -122,14 +126,8 @@ const Index = () => {
       };
       
       ws.onerror = (error) => {
+        // A faixa "Backend desconectado" já avisa; um toast aqui repetiria a cada tentativa de reconexão
         console.error('❌ ERRO WebSocket:', error);
-        console.error('Certifique-se que robot_autonomous_control.py está rodando!');
-        console.error('Execute: python robot_autonomous_control.py');
-        toast({
-          title: "Erro de Conexão",
-          description: "Servidor Python não está rodando. Execute: python robot_autonomous_control.py",
-          variant: "destructive",
-        });
       };
       
       ws.onclose = () => {
@@ -230,133 +228,120 @@ const Index = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-4xl font-bold">Tri-Bot Pilot</h1>
-      </div>
-      <p className="text-center text-muted-foreground mb-8">
-        Sistema de Controle Remoto com Navegação Autônoma
-      </p>
-      
-      {/* Connection Status */}
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* WebSocket Status */}
-        <div className={`p-4 rounded-lg border-2 ${isConnected ? 'bg-green-500/10 border-green-500' : 'bg-destructive/10 border-destructive'}`}>
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-destructive'}`} />
-            <span className="font-semibold">Servidor Python</span>
+    <div className="min-h-screen">
+      <StatusBar
+        isConnected={isConnected}
+        isArduinoConnected={isArduinoConnected}
+        arduinoPort={arduinoPort}
+        sensors={sensorsStatus}
+        autonomousMode={autonomousMode}
+        robotMoving={robotMoving}
+        onEmergencyStop={handleEmergencyStop}
+      />
+
+      <main className="mx-auto max-w-[1600px] px-4 py-4">
+        {!isConnected && (
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+            <span className="font-semibold text-amber-300">Backend desconectado.</span>{" "}
+            <span className="text-muted-foreground">
+              Rode <code className="rounded bg-muted px-1">./start.sh</code> (ou <code className="rounded bg-muted px-1">./start.sh --sim</code> sem o robô).
+              Tentando reconectar a cada 3 s...
+            </span>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isConnected ? 'Conectado (WebSocket)' : 'Desconectado - Execute ./start.sh'}
-          </p>
+        )}
+
+        <div className="grid gap-4 xl:grid-cols-12">
+          {/* Sensores */}
+          <section className="space-y-4 xl:col-span-8">
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <Lidar2DView
+                scan={lidarScan}
+                groundObstacles={groundObstacles}
+                sensor={sensorsStatus?.lidar}
+                backendConnected={isConnected}
+              />
+              <div className="space-y-4">
+                <CameraPanel
+                  cameraImage={cameraImage}
+                  l515Image={l515Image}
+                  cameraLabel={sensorsStatus?.camera?.kind === "sim" ? "Câmera simulada" : sensorsStatus?.camera?.name ?? "Câmera C270"}
+                  backendConnected={isConnected}
+                  trackedObjects={trackedObjects}
+                  trackingMode={trackingMode}
+                  yoloEnabled={yoloEnabled}
+                  onToggleYolo={handleToggleYolo}
+                />
+                <ObstaclePanel ground={groundObstacles} height={heightObstacles} />
+              </div>
+            </div>
+          </section>
+
+          {/* Controles */}
+          <aside className="grid items-start gap-4 md:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Gamepad2 className="h-5 w-5 text-primary" />
+                  Controle manual
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="directional">
+                  <TabsList className="mb-4 grid w-full grid-cols-2">
+                    <TabsTrigger value="directional">Direcional</TabsTrigger>
+                    <TabsTrigger value="motor">Por motor</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="directional">
+                    <DirectionalControl onSendCommand={handleSendCommand} />
+                  </TabsContent>
+                  <TabsContent value="motor">
+                    <MotorSpeedControl onSendCommand={handleSendCommand} />
+                  </TabsContent>
+                </Tabs>
+                {lastCommand && (
+                  <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
+                    Último comando: <span className="font-mono tabular text-foreground">{lastCommand}</span>
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <AutonomousControl
+              isConnected={isConnected}
+              autonomousMode={autonomousMode}
+              onToggleAutonomous={handleToggleAutonomous}
+              autonomousSpeed={autonomousSpeed}
+              onSpeedChange={handleAutonomousSpeedChange}
+              navigationStatus={navigationStatus}
+            />
+
+            <VoiceControl
+              onVoiceCommand={handleVoiceCommand}
+              lastVoiceEvent={lastVoiceEvent}
+              isConnected={isConnected}
+            />
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Plug className="h-5 w-5 text-primary" />
+                  Arduino
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <SerialConnectionControl
+                  wsRef={wsRef}
+                  isArduinoConnected={isArduinoConnected}
+                  availablePorts={availablePorts}
+                  connectedPort={arduinoPort}
+                  onConnectionChange={setIsArduinoConnected}
+                />
+                {!isArduinoConnected && <ArduinoTroubleshooting />}
+              </CardContent>
+            </Card>
+          </aside>
         </div>
-
-        {/* Arduino Status */}
-        <div className={`p-4 rounded-lg border-2 ${isArduinoConnected ? 'bg-green-500/10 border-green-500' : 'bg-muted/50 border-border'}`}>
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isArduinoConnected ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`} />
-            <span className="font-semibold">Arduino</span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isArduinoConnected ? `Conectado${arduinoPort ? ` em ${arduinoPort}` : ''}${arduinoPort === 'SIM' ? ' (simulado)' : ''}` : 'Aguardando conexão'}
-          </p>
-        </div>
-      </div>
-
-      {/* Arduino Connection */}
-      <div className="mb-6 space-y-4">
-        <SerialConnectionControl
-          wsRef={wsRef}
-          isArduinoConnected={isArduinoConnected}
-          availablePorts={availablePorts}
-          connectedPort={arduinoPort}
-          onConnectionChange={setIsArduinoConnected}
-        />
-        
-        {!isArduinoConnected && <ArduinoTroubleshooting />}
-      </div>
-      
-      {lastCommand && (
-        <div className="text-center mb-6 p-4 bg-secondary rounded-lg">
-          <p className="text-sm text-muted-foreground">Último comando enviado:</p>
-          <p className="font-mono font-semibold">{lastCommand}</p>
-        </div>
-      )}
-
-      {/* Autonomous Control */}
-      <div className="mb-6">
-        <AutonomousControl
-          isConnected={isConnected}
-          autonomousMode={autonomousMode}
-          onToggleAutonomous={handleToggleAutonomous}
-          onEmergencyStop={handleEmergencyStop}
-          autonomousSpeed={autonomousSpeed}
-          onSpeedChange={handleAutonomousSpeedChange}
-          navigationStatus={navigationStatus}
-          heightObstacles={heightObstacles}
-        />
-      </div>
-
-      {/* Voice Control */}
-      <div className="mb-6">
-        <VoiceControl
-          onVoiceCommand={handleVoiceCommand}
-          lastVoiceEvent={lastVoiceEvent}
-          isConnected={isConnected}
-        />
-      </div>
-
-      {/* Camera D435 + Multi-Camera View */}
-      <div className="mb-6 space-y-6">
-        {/* Status das Câmeras */}
-        <CameraStatus
-          sensors={sensorsStatus}
-          yoloEnabled={yoloEnabled}
-          trackingMode={trackingMode}
-        />
-
-        {/* Visualização com Múltiplas Câmeras */}
-        <MultiCameraView
-          lidarImage={l515Image}
-          d435Image={cameraImage}
-          cameraLabel={sensorsStatus?.camera?.kind === 'sim' ? 'Câmera simulada' : 'Câmera C270'}
-          trackedObjects={trackedObjects}
-          trackingMode={trackingMode}
-          yoloEnabled={yoloEnabled}
-          onToggleYolo={handleToggleYolo}
-        />
-
-        {/* LiDAR 2D */}
-        <Lidar2DView
-          scan={lidarScan}
-          groundObstacles={groundObstacles}
-          sensorName={sensorsStatus?.lidar?.name ? `LiDAR 2D · ${sensorsStatus.lidar.name}` : 'LiDAR 2D'}
-          online={sensorsStatus?.lidar?.online}
-        />
-
-        {/* Visualização de Sensores (versão simplificada) */}
-        <SensorVisualization
-          cameraImage={cameraImage}
-          groundObstacles={groundObstacles}
-          heightObstacles={heightObstacles}
-          trackedObjects={trackedObjects}
-        />
-      </div>
-
-      <Tabs defaultValue="directional" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="directional">Controle Direcional</TabsTrigger>
-          <TabsTrigger value="motor">Controle por Motor</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="directional">
-          <DirectionalControl onSendCommand={handleSendCommand} />
-        </TabsContent>
-        
-        <TabsContent value="motor">
-          <MotorSpeedControl onSendCommand={handleSendCommand} />
-        </TabsContent>
-      </Tabs>
+      </main>
     </div>
   );
 };

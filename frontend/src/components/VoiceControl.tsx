@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mic, MicOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { identifyVoiceCommand, voiceCommandLabel, type VoiceCommandEvent, type VoiceCommandId } from '@/lib/voiceCommands';
@@ -252,144 +252,60 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
   }, []);
 
   return (
-    <Card className="p-6">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">Controle por Voz</h3>
-            <p className="text-sm text-muted-foreground">
-              Ex.: "vai pra frente", "meia volta", "volta completa", "para", "modo autônomo".
-              O assistente José (pasta voz/) usa os mesmos comandos.
-            </p>
-          </div>
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mic className="h-5 w-5 text-primary" />
+            Voz
+          </CardTitle>
           <Button
             onClick={toggleListening}
-            size="lg"
+            size="sm"
             variant={isListening ? 'default' : 'outline'}
-            className="gap-2"
+            className="gap-1.5"
             disabled={!isConnected}
           >
-            {isListening ? (
-              <>
-                <Mic className="h-5 w-5" />
-                Escutando...
-              </>
-            ) : (
-              <>
-                <MicOff className="h-5 w-5" />
-                Ativar Voz
-              </>
-            )}
+            {isListening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            {isListening ? 'Ouvindo' : 'Microfone do navegador'}
           </Button>
         </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {lastVoiceEvent ? (
+          <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">{voiceCommandLabel(lastVoiceEvent.command)}</span>
+              <span className="text-xs text-muted-foreground">
+                {lastVoiceEvent.source === 'jose' ? 'José' : 'navegador'} · {STATUS_TEXT[lastVoiceEvent.status] ?? lastVoiceEvent.status}
+              </span>
+            </div>
+            {lastVoiceEvent.text && <p className="mt-0.5 text-xs text-muted-foreground">"{lastVoiceEvent.text}"</p>}
+          </div>
+        ) : (
+          <p className="text-muted-foreground">
+            Nenhum comando ainda. Fale com o José (rosto em <span className="font-mono">:8090</span>) ou use o microfone do navegador.
+          </p>
+        )}
 
         {isListening && (
-          <div className="space-y-2">
-            <div className="p-3 bg-muted rounded-md">
-              <p className="text-sm text-muted-foreground">Ouvindo:</p>
-              <p className="text-base font-medium">{transcript || 'Aguardando comando...'}</p>
+          <div className="space-y-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+            <div className="h-1.5 overflow-hidden rounded-full bg-background">
+              <div className="h-full bg-emerald-400 transition-all duration-100" style={{ width: `${audioLevel}%` }} />
             </div>
-            {lastCommand && (
-              <div className="p-3 bg-primary/10 rounded-md">
-                <p className="text-sm text-muted-foreground">Último comando executado:</p>
-                <p className="text-base font-semibold text-primary">{lastCommand}</p>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Área de feedback - mostra sempre quando conectado */}
-        {isConnected && (
-          <div className="mt-4 p-4 bg-muted/50 rounded-lg border border-border space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Status:</span>
-              <span className={`text-sm font-medium ${isListening ? "text-green-500" : "text-muted-foreground"}`}>
-                {isListening ? "🎤 Ativo" : "⏸️ Inativo"}
-              </span>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Microfone:</span>
-              <span className={`text-sm font-medium ${
-                micPermission === 'granted' ? "text-green-500" : 
-                micPermission === 'denied' ? "text-red-500" : 
-                "text-yellow-500"
-              }`}>
-                {micPermission === 'granted' ? '✅ Permitido' : 
-                 micPermission === 'denied' ? '❌ Negado - Verifique configurações do navegador' : 
-                 '⚠️ Aguardando permissão'}
-              </span>
-            </div>
-            
-            {isListening && (
-              <div className="space-y-2 pt-2 border-t border-border">
-                <div>
-                  <span className="text-sm text-muted-foreground">Nível de áudio:</span>
-                  <div className="mt-1.5 h-3 bg-background rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-green-500 to-green-400 transition-all duration-100"
-                      style={{ width: `${audioLevel}%` }}
-                    />
-                  </div>
-                  {audioLevel < 5 && (
-                    <p className="text-xs text-yellow-500 mt-1.5">
-                      ⚠️ Nenhum áudio detectado - fale mais alto ou verifique seu microfone
-                    </p>
-                  )}
-                  {audioLevel >= 5 && (
-                    <p className="text-xs text-green-500 mt-1.5">
-                      ✅ Áudio sendo detectado
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            <div className="space-y-2 pt-2 border-t border-border">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Reconhecido agora:</p>
-                <p className="text-sm font-mono bg-background/50 p-2 rounded min-h-[2rem]">
-                  {transcript || '---'}
-                </p>
-              </div>
-              
-              {lastCommand && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Comando executado:</p>
-                  <p className="text-sm font-semibold text-primary bg-background/50 p-2 rounded">
-                    {lastCommand}
-                  </p>
-                </div>
-              )}
-            </div>
+            <p className="font-mono text-xs">{transcript || 'Aguardando fala...'}</p>
+            {lastCommand && <p className="text-xs text-muted-foreground">Último: {lastCommand}</p>}
           </div>
         )}
 
-        {lastVoiceEvent && (
-          <div className="p-3 bg-primary/10 rounded-md">
-            <p className="text-sm text-muted-foreground">
-              Último comando de voz recebido pelo robô ({lastVoiceEvent.source === 'jose' ? 'assistente José' : 'navegador'}):
-            </p>
-            <p className="text-base font-semibold text-primary">
-              {voiceCommandLabel(lastVoiceEvent.command)}
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                — {STATUS_TEXT[lastVoiceEvent.status] ?? lastVoiceEvent.status}
-              </span>
-            </p>
-            {lastVoiceEvent.text && (
-              <p className="text-xs text-muted-foreground mt-1">"{lastVoiceEvent.text}"</p>
-            )}
-          </div>
+        {micPermission === 'denied' && (
+          <p className="text-xs text-red-400">Microfone bloqueado: libere nas configurações do navegador.</p>
         )}
 
-        {!isConnected && (
-          <div className="p-3 bg-destructive/10 rounded-md">
-            <p className="text-sm text-destructive">
-              Conecte-se ao servidor Python para usar comandos de voz
-            </p>
-          </div>
-        )}
-      </div>
+        <p className="text-xs text-muted-foreground">
+          "vai pra frente", "meia volta", "volta completa", <span className="font-semibold">"para"</span>, "modo autônomo"
+        </p>
+      </CardContent>
     </Card>
   );
 };
