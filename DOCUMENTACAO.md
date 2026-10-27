@@ -484,7 +484,7 @@ Tema claro ou escuro: na primeira visita segue o tema do sistema; o botão de so
 
 - **Barra do topo (fixa)**: servidor, Arduino (porta), LiDAR 2D, C270, D435 e modo (manual/autônomo, andando/parado). Bolinha verde = ok, amarela = esperando, cinza = desligado. O botão **PARAR** fica sempre visível: para os motores e desliga o modo autônomo.
 - **Mapa de pontos do LiDAR 2D**: vista de cima, frente para cima. Os pontos são coloridos pela distância (vermelho < 0,5 m, âmbar < 1 m, ciano mais longe). Os setores da navegação aparecem em verde ou vermelho. Tem zoom de 2/4/8 m e a opção **Rastro**, que mantém os últimos ~1 s de leituras. Embaixo: quantidade de pontos, taxa de atualização, ponto mais perto (distância e ângulo) e caminho livre à frente. Sem leituras, o painel mostra **"Aguardando o LiDAR 2D"** com a dica do que fazer.
-- **Câmeras**: C270 (frontal) e, embaixo, a D435, cada uma com seu status e sua tela de espera. As caixas do YOLO aparecem na câmera onde o objeto foi visto (switch do YOLO no canto).
+- **Câmeras**: D435 em cima e, embaixo, a C270 (frontal), cada uma com seu status e sua tela de espera. As caixas do YOLO aparecem na câmera onde o objeto foi visto (switch do YOLO no canto).
 - **Obstáculos à frente**: distâncias por setor (esquerda, centro, direita), no chão (LiDAR) e na altura (D435/YOLO).
 - **Controle manual**: direcional (WASD/setas, Q/E giro, espaço para) ou por motor.
 - **Modo autônomo**: switch, o que o robô está fazendo e a velocidade.

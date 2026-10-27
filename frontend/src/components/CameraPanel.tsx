@@ -123,14 +123,6 @@ export const CameraPanel = ({
 
       <CardContent className="space-y-4">
         <CameraView
-          title={isSim ? "Câmera simulada" : "C270"}
-          subtitle="frontal, cor"
-          image={c270Image}
-          info={camera}
-          objects={trackedObjects.filter((o) => (o.camera ?? "camera") === "camera")}
-          waitingHint={backendConnected ? "Conecte a C270 na USB (ou use --camera-device /dev/videoN)." : offline}
-        />
-        <CameraView
           title={realsense?.name ?? "D435"}
           subtitle="RealSense, cor + profundidade"
           image={realsenseImage}
@@ -139,6 +131,14 @@ export const CameraPanel = ({
           waitingHint={
             !backendConnected ? offline : isSim ? "A D435 não é simulada no --sim." : "Conecte a D435 numa porta USB 3 (azul)."
           }
+        />
+        <CameraView
+          title={isSim ? "Câmera simulada" : "C270"}
+          subtitle="frontal, cor"
+          image={c270Image}
+          info={camera}
+          objects={trackedObjects.filter((o) => (o.camera ?? "camera") === "camera")}
+          waitingHint={backendConnected ? "Conecte a C270 na USB (ou use --camera-device /dev/videoN)." : offline}
         />
 
         {trackedObjects.length > 0 && (
