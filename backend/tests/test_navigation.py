@@ -3,6 +3,7 @@
 import math
 import os
 import sys
+import json
 import unittest
 
 import numpy as np
@@ -57,6 +58,7 @@ class ObstacleTest(unittest.TestCase):
         height = ObstacleDetector().analyze_height(depth)
         self.assertTrue(height['left'])
         self.assertFalse(height['right'])
+        json.dumps(height)  # vai pelo WebSocket: nada de numpy.bool_ (quebrava com a D435 real)
 
         # O tracker básico (código original) só enxerga objetos entre ~0.7 m e 2 m
         depth[150:330, 40:180] = 1.2

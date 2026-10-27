@@ -13,16 +13,16 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
   const [activeDirection, setActiveDirection] = useState<string | null>(null);
 
   const moveForward = useCallback(() => {
-    // Frente: M1=-speed, M2=0, M3=+speed
-    console.log(`🎯 moveForward chamado com speed=${speed}, enviando: M1=${-speed}, M2=0, M3=${speed}`);
-    onSendCommand(-speed, 0, speed);
+    // Frente: M1=+speed, M2=0, M3=-speed (invertido após teste no robô real)
+    console.log(`🎯 moveForward chamado com speed=${speed}, enviando: M1=${speed}, M2=0, M3=${-speed}`);
+    onSendCommand(speed, 0, -speed);
     setActiveDirection('forward');
   }, [speed, onSendCommand]);
   
   const moveBackward = useCallback(() => {
-    // Trás: M1=+speed, M2=0, M3=-speed
-    console.log(`🎯 moveBackward chamado com speed=${speed}, enviando: M1=${speed}, M2=0, M3=${-speed}`);
-    onSendCommand(speed, 0, -speed);
+    // Trás: M1=-speed, M2=0, M3=+speed (invertido após teste no robô real)
+    console.log(`🎯 moveBackward chamado com speed=${speed}, enviando: M1=${-speed}, M2=0, M3=${speed}`);
+    onSendCommand(-speed, 0, speed);
     setActiveDirection('backward');
   }, [speed, onSendCommand]);
   
@@ -154,8 +154,8 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none">Valores enviados aos motores</summary>
         <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono tabular">
-          <span>Frente</span><span>{-speed}, 0, {speed}</span>
-          <span>Trás</span><span>{speed}, 0, {-speed}</span>
+          <span>Frente</span><span>{speed}, 0, {-speed}</span>
+          <span>Trás</span><span>{-speed}, 0, {speed}</span>
           <span>Direita</span><span>0, {speed}, {-speed}</span>
           <span>Esquerda</span><span>0, {-speed}, {speed}</span>
           <span>Horário</span><span>{Math.round(speed * 0.6)} × 3</span>

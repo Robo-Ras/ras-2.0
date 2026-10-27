@@ -146,7 +146,11 @@ class UsbCamera(CameraBase):
             self.name = 'C270' if usb_id == '046d:0825' or 'C270' in label else label.split(':')[0]
             print(f"  Webcam selecionada: {label} ({usb_id}) em {device}")
 
-        self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+        # Algumas builds do OpenCV não abrem pelo caminho ("can't capture by name"): usa o índice
+        index = device
+        if isinstance(device, str) and device.startswith('/dev/video') and device[10:].isdigit():
+            index = int(device[10:])
+        self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         if not self.cap.isOpened():
             print(f"✗ Não foi possível abrir a webcam {device}")
             self.cap = None

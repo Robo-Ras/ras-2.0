@@ -267,7 +267,7 @@ class ObstacleDetector:
             if len(valid) > 100:
                 min_dist = np.min(valid)
                 return {
-                    'blocked': min_dist < 0.8,
+                    'blocked': bool(min_dist < 0.8),
                     'distance': float(min_dist)
                 }
             return {'blocked': False, 'distance': 3.0}
@@ -287,6 +287,15 @@ class ObstacleDetector:
             },
             'sensor': 'RealSense'
         }
+
+
+def _json_default(obj):
+    """Números/arrays do numpy (comuns com a profundidade da D435) viram tipos do Python no JSON"""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
 
 
 def merge_obstacles(*sources):
@@ -628,7 +637,7 @@ class WebSocketServer:
     async def send_to_all(self, message):
         """Envia mensagem para todos os clientes"""
         if self.clients:
-            payload = json.dumps(message)
+            payload = json.dumps(message, default=_json_default)
             await asyncio.gather(
                 *[client.send(payload) for client in list(self.clients)],
                 return_exceptions=True
@@ -854,13 +863,9 @@ class WebSocketServer:
             if realsense is not None and realsense['depth'] is not None:
                 self.basic_tracker.update(realsense['depth'])
                 tracked = self.basic_tracker.get_tracked_objects()
-                annotated = realsense['color'].copy()
+                # O painel desenha as caixas na câmera indicada aqui
                 for obj in tracked:
-                    b = obj['bbox']
-                    cv2.rectangle(annotated, (b['x'], b['y']), (b['x'] + b['w'], b['y'] + b['h']), (0, 255, 0), 2)
-                    cv2.putText(annotated, f"ID:{obj['id']} {obj['depth']:.2f}m", (b['x'], b['y'] - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                realsense['annotated'] = annotated
+                    obj['camera'] = 'realsense'
                 message['tracked_objects'] = tracked
 
         realsense = frames.get('realsense')
