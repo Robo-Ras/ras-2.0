@@ -68,6 +68,7 @@ Sem o José: `./start.sh` (sem `--voz`).
 | "Dê meia volta" / "Dê volta completa" | Gira no lugar |
 | **"Para"** / **"Pare"** | Para na hora (funciona sem chamar "José" de novo) |
 | "História" | Conta histórias ("próxima", "volta", "para") |
+| "Conversa" | Conversa livre com o Gemini ("voltar" sai). Precisa de internet e da `GEMINI_API_KEY` ([voz/README.md](voz/README.md)) |
 | "Obrigado" | "Ao seu dispor" e volta a esperar |
 
 "Me segue" e "Fica do meu lado" aparecem na tela, mas o robô ainda não faz nada com eles.

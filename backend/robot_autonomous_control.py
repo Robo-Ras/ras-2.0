@@ -780,27 +780,31 @@ class WebSocketServer:
                 self.autonomous_mode = False
                 await self.send_to_all({'type': 'autonomous_status', 'enabled': False})
                 direction, seconds = VOICE_MOVES[command]
-                self.voice_task = asyncio.create_task(self._voice_move(direction, seconds))
+                self.voice_task = asyncio.create_task(self._voice_move(command, direction, seconds))
         elif command in VOICE_PENDING:
             status = 'not_implemented'
         else:
             status = 'unknown'
 
+        # running=True: um voice_command_done chega quando o movimento terminar (o José espera por ele)
         await self.send_to_all({'type': 'voice_command', 'command': command, 'text': text,
-                                'source': source, 'status': status})
+                                'source': source, 'status': status, 'running': self.voice_task is not None})
 
-    async def _voice_move(self, direction, seconds):
+    async def _voice_move(self, command, direction, seconds):
         loop = asyncio.get_running_loop()
         end = loop.time() + seconds
-        # Se for cancelado, quem cancelou (outro comando, joystick, autônomo) assume os motores
-        self.robot.move(direction, VOICE_SPEED)
-        self.robot_moving = True
-        # Mantém last_move_time em dia para o timeout de movimento manual não marcar como parado
-        while loop.time() < end:
-            self.last_move_time = loop.time()
-            await asyncio.sleep(0.1)
-        self.robot.move('stop', 0)
-        self.robot_moving = False
+        try:
+            # Se for cancelado, quem cancelou (outro comando, joystick, autônomo) assume os motores
+            self.robot.move(direction, VOICE_SPEED)
+            self.robot_moving = True
+            # Mantém last_move_time em dia para o timeout de movimento manual não marcar como parado
+            while loop.time() < end:
+                self.last_move_time = loop.time()
+                await asyncio.sleep(0.1)
+            self.robot.move('stop', 0)
+            self.robot_moving = False
+        finally:
+            await self.send_to_all({'type': 'voice_command_done', 'command': command})
 
     async def set_yolo(self, enabled):
         if enabled and self.sensors.camera is None and self.sensors.realsense is None:
@@ -977,7 +981,10 @@ async def run_until_signal(server, host, port):
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, task.cancel)
+        try:
+            loop.add_signal_handler(sig, task.cancel)
+        except NotImplementedError:
+            pass  # Windows: o Ctrl+C chega como KeyboardInterrupt e é tratado em main()
     try:
         await server.start_server(host, port)
     except asyncio.CancelledError:

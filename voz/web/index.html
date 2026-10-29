@@ -10,6 +10,7 @@
     --fundo: #FFFFFF;
     --principal: #1800AD;
     --titulo-historia: #FF751F;
+    --dica: #FF0000;
   }
   html, body {
     margin: 0;
@@ -91,12 +92,28 @@
     font-weight: bold;
     font-size: 53px;
   }
+  /* Modo conversa: mesma fonte e tamanho do título da história */
+  #fase, #dica {
+    position: absolute;
+    font-weight: bold;
+    font-size: 53px;
+  }
+  #fase { right: 60px; bottom: 50px; color: var(--principal); }
+  #dica { left: 60px; top: 40px; color: var(--dica); }
   #transcricao, #velocidade {
     position: fixed;
     color: gray;
     font-family: Consolas, "DejaVu Sans Mono", monospace;
   }
-  #transcricao { left: 10px; top: 10px; font-size: 16px; }
+  #transcricao {
+    left: 10px;
+    bottom: 10px;
+    max-width: calc(50vw - 20px);
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   #velocidade { right: 10px; bottom: 10px; font-size: 13px; }
   #aviso {
     position: fixed;
@@ -123,6 +140,8 @@
     <div id="linha"></div>
     <div id="bolinha"></div>
   </div>
+  <div id="fase" hidden></div>
+  <div id="dica" hidden>diga "voltar" para retornar ao menu</div>
 </div>
 <div id="transcricao"></div>
 <div id="velocidade"></div>
@@ -132,10 +151,22 @@
   const IMAGENS = {
     acordado: 'joseacordado.png',
     transicao: 'joseacordado.png',
-    ouvindo: 'joseouvindo.png',
+    ouvindo: 'joseouvindo.jpg',
     comando: 'Josefechado.png',
+    executando: 'Josefechado.png',
     historia: 'josehistoria.png',
+    carregando: 'Josefechado.png',
+    conversa: 'joseacordado.png',
+    pensando: 'Josefechado.png',
+    respondendo: 'joseresponde.png',
   };
+  const FASES = {
+    carregando: 'carregando...',
+    conversa: 'ouvindo...',
+    pensando: 'pensando...',
+    respondendo: 'respondendo...',
+  };
+  const COM_DICA = ['conversa', 'pensando', 'respondendo'];
   // Pré-carrega para a troca de rosto não piscar
   Object.values(IMAGENS).forEach((nome) => { new Image().src = `/rostojose/${nome}`; });
 
@@ -173,9 +204,12 @@
       estadoAnterior = e.estado;
     }
 
-    $('comando').hidden = e.estado !== 'comando';
+    $('comando').hidden = e.estado !== 'comando' && e.estado !== 'executando';
     $('comando').textContent = e.comando;
     $('agradecimento').hidden = e.estado !== 'agradecimento';
+    $('fase').hidden = !FASES[e.estado];
+    $('fase').textContent = FASES[e.estado] || '';
+    $('dica').hidden = !COM_DICA.includes(e.estado);
 
     $('historia').hidden = e.estado !== 'historia';
     if (e.estado === 'historia') {

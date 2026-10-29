@@ -1,6 +1,8 @@
 # Assistente de voz José (python jose.py)
-faster-whisper   # traz também o "av", usado para ler a duração dos mp3
+faster-whisper>=1.1   # traz também o "av", usado para ler a duração dos mp3; 1.1+ tem o large-v3-turbo
 sounddevice      # precisa da PortAudio do sistema: sudo apt install libportaudio2
 numpy
 pygame
 websockets>=12   # conexão com o backend do robô
+google-genai     # modo conversa: respostas e emoção com o Gemini
+edge-tts         # modo conversa: voz do José (pt-BR-AntonioNeural)
