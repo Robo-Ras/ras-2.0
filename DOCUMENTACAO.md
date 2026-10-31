@@ -142,6 +142,7 @@ As opções `--lan`, `--no-browser` e `--help` são do próprio script; **todas 
 | `--lan` | — | Libera acesso por outros aparelhos na rede (tablet) |
 | `--no-browser` | — | Não abre o navegador |
 | `--voz` | — | Também sobe o assistente de voz José; o rosto abre em **http://localhost:8090** (veja `voz/README.md`) |
+| `--controle` | — | Também sobe o controle para o celular em **http://\<ip-do-notebook\>:8100** (abre o backend para a rede) |
 | `--host` | `127.0.0.1` | Endereço do WebSocket (o `--lan` usa `0.0.0.0`) |
 | `--port` | `8765` | Porta do WebSocket |
 | `--camera` | `auto` | `auto`, `usb` ou `none` |
@@ -223,10 +224,12 @@ ras-2.0/
         ├── pages/Index.tsx           # painel principal
         ├── pages/TabletStatus.tsx    # carinha do tablet
         ├── lib/ws.ts                 # endereço do backend
+        ├── lib/drive.ts              # valores dos motores por direção (painel e celular)
         ├── lib/voiceCommands.ts      # vocabulário de voz (o mesmo do José)
         └── components/
             ├── StatusBar.tsx         # barra fixa: status dos sensores + PARAR
             ├── Lidar2DView.tsx       # mapa de pontos do LiDAR 2D (com tela de espera)
+            ├── (pages/Controle.tsx)  # controle do celular (/controle, porta 8100)
             ├── CameraPanel.tsx       # C270 e D435 + caixas do YOLO
             ├── ObstaclePanel.tsx     # distâncias por setor (chão e altura)
             ├── AutonomousControl.tsx
@@ -488,6 +491,7 @@ Tema claro ou escuro: na primeira visita segue o tema do sistema; o botão de so
 - **Obstáculos à frente**: distâncias por setor (esquerda, centro, direita), no chão (LiDAR) e na altura (D435/YOLO).
 - **Controle manual**: direcional (WASD/setas, Q/E giro, espaço para) ou por motor.
 - **Modo autônomo**: switch, o que o robô está fazendo e a velocidade.
+- **Esconder sensores**: cada câmera e o LiDAR têm um interruptor; desligado, o card some (só da tela, o backend segue lendo). Salvo no navegador.
 - **Voz**: último comando de voz recebido (do José ou do navegador) e o microfone do navegador.
 - **Arduino**: conexão serial e o guia de diagnóstico.
 
@@ -521,6 +525,8 @@ Endereço: `ws://<host>:8765`. Todas as mensagens são JSON com um campo `type`.
 | `set_autonomous` | `enabled`, `speed` (opcional) | Liga/desliga o modo autônomo (desligar = `stop`) |
 | `set_autonomous_speed` | `speed` | Velocidade base do autônomo |
 | `toggle_yolo` | `enabled` | Liga/desliga o YOLO (carrega o modelo na primeira vez) |
+| `move` com `hold: true` | `m1, m2, m3, hold` | Movimento "segurando" (celular): precisa ser repetido a cada < 0,6 s (`HOLD_TIMEOUT_S`), senão o backend para os motores |
+| `set_lite` | `enabled` | Esta conexão passa a receber o `sensor_data` sem `camera_image`, `realsense_image` e `lidar_scan` |
 | `robot_face_heartbeat` | — | Marca o tablet como conectado (expira em 5 s) |
 
 ### Do backend para o navegador

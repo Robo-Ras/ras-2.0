@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gamepad2, Plug } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getWsUrl } from "@/lib/ws";
+import { useSensorToggles } from "@/lib/useSensorToggles";
 import type { VoiceCommandEvent, VoiceCommandId } from "@/lib/voiceCommands";
 
 const Index = () => {
@@ -36,6 +37,7 @@ const Index = () => {
   const [navigationStatus, setNavigationStatus] = useState<any>();
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
   const [lastVoiceEvent, setLastVoiceEvent] = useState<VoiceCommandEvent | null>(null);
+  const { enabled: show, setSensor } = useSensorToggles();
   const wsRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
 
@@ -236,6 +238,7 @@ const Index = () => {
         sensors={sensorsStatus}
         autonomousMode={autonomousMode}
         robotMoving={robotMoving}
+        hidden={{ lidar: !show.lidar, c270: !show.c270, d435: !show.d435 }}
         onEmergencyStop={handleEmergencyStop}
       />
 
@@ -259,6 +262,8 @@ const Index = () => {
                 groundObstacles={groundObstacles}
                 sensor={sensorsStatus?.lidar}
                 backendConnected={isConnected}
+                enabled={show.lidar}
+                onEnabledChange={(v) => setSensor("lidar", v)}
               />
               <CameraPanel
                 cameraImage={cameraImage}
@@ -270,9 +275,18 @@ const Index = () => {
                 trackingMode={trackingMode}
                 yoloEnabled={yoloEnabled}
                 onToggleYolo={handleToggleYolo}
+                c270Enabled={show.c270}
+                d435Enabled={show.d435}
+                onC270Change={(v) => setSensor("c270", v)}
+                onD435Change={(v) => setSensor("d435", v)}
               />
             </div>
-            <ObstaclePanel ground={groundObstacles} height={heightObstacles} />
+            <ObstaclePanel
+              ground={groundObstacles}
+              height={heightObstacles}
+              showGround={show.lidar}
+              showHeight={show.d435}
+            />
           </section>
 
           {/* Controles */}

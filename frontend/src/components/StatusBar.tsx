@@ -42,6 +42,7 @@ interface StatusBarProps {
   sensors?: SensorsStatus;
   autonomousMode: boolean;
   robotMoving: boolean;
+  hidden?: Partial<Record<"lidar" | "c270" | "d435", boolean>>; // sensores escondidos da interface
   onEmergencyStop: () => void;
 }
 
@@ -71,6 +72,7 @@ export const StatusBar = ({
   sensors,
   autonomousMode,
   robotMoving,
+  hidden = {},
   onEmergencyStop,
 }: StatusBarProps) => {
   const sensor = (info?: SensorInfo): Tone => (!isConnected ? "off" : info?.online ? "ok" : "warn");
@@ -90,12 +92,20 @@ export const StatusBar = ({
             tone={!isConnected ? "off" : isArduinoConnected ? "ok" : "warn"}
             detail={isArduinoConnected ? (arduinoPort === "SIM" ? "SIM (simulado)" : arduinoPort ?? "Conectado") : "Desconectado"}
           />
-          <Pill label="LiDAR 2D" tone={sensor(sensors?.lidar)} detail={sensorDetail(sensors?.lidar, "Aguardando")} />
-          <Pill label="C270" tone={sensor(sensors?.camera)} detail={sensorDetail(sensors?.camera)} />
+          <Pill
+            label="LiDAR 2D"
+            tone={hidden.lidar ? "off" : sensor(sensors?.lidar)}
+            detail={hidden.lidar ? "Oculto" : sensorDetail(sensors?.lidar, "Aguardando")}
+          />
+          <Pill
+            label="C270"
+            tone={hidden.c270 ? "off" : sensor(sensors?.camera)}
+            detail={hidden.c270 ? "Oculta" : sensorDetail(sensors?.camera)}
+          />
           <Pill
             label="D435"
-            tone={sensors?.camera?.kind === "sim" ? "off" : sensor(sensors?.realsense)}
-            detail={sensors?.camera?.kind === "sim" ? "Não simulada" : sensorDetail(sensors?.realsense)}
+            tone={hidden.d435 || sensors?.camera?.kind === "sim" ? "off" : sensor(sensors?.realsense)}
+            detail={hidden.d435 ? "Oculta" : sensors?.camera?.kind === "sim" ? "Não simulada" : sensorDetail(sensors?.realsense)}
           />
           <Pill
             label="Modo"

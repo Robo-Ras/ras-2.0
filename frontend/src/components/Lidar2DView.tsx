@@ -26,6 +26,8 @@ interface Lidar2DViewProps {
   groundObstacles?: ObstacleData;
   sensor?: SensorInfo;
   backendConnected: boolean;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
 }
 
 // Mesmos setores do backend (ObstacleDetector.SCAN_SECTORS)
@@ -66,7 +68,7 @@ const PALETTE = {
   },
 };
 
-export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }: Lidar2DViewProps) => {
+export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected, enabled, onEnabledChange }: Lidar2DViewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trailRef = useRef<LidarScan[]>([]);
   const updatesRef = useRef<number[]>([]);
@@ -202,7 +204,9 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
     ctx.lineWidth = 1;
   }, [scan, groundObstacles, maxRange, trail, live, pal]);
 
-  const status = !backendConnected
+  const status = !enabled
+    ? { badge: "OCULTO", variant: "outline" as const }
+    : !backendConnected
     ? { badge: "SEM BACKEND", variant: "secondary" as const }
     : live
       ? { badge: sensor?.kind === "sim" ? "SIMULADO" : "AO VIVO", variant: "default" as const }
@@ -220,9 +224,25 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
             </CardTitle>
             <CardDescription>Vista de cima, frente do robô para cima</CardDescription>
           </div>
-          <Badge variant={status.variant}>{status.badge}</Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant={status.variant}>{status.badge}</Badge>
+            <Switch
+              checked={enabled}
+              onCheckedChange={onEnabledChange}
+              aria-label="Mostrar o LiDAR 2D na interface"
+              title={enabled ? "Esconder o LiDAR 2D" : "Mostrar o LiDAR 2D"}
+            />
+          </div>
         </div>
       </CardHeader>
+
+      {!enabled ? (
+        <CardContent className="pt-0">
+          <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            LiDAR 2D oculto da interface. Ligue o interruptor para mostrar de novo.
+          </p>
+        </CardContent>
+      ) : (
 
       <CardContent className="space-y-3">
         <div className="relative mx-auto aspect-square w-full max-w-[560px] overflow-hidden rounded-lg border border-border">
@@ -297,6 +317,7 @@ export const Lidar2DView = ({ scan, groundObstacles, sensor, backendConnected }:
           </div>
         </div>
       </CardContent>
+      )}
     </Card>
   );
 };

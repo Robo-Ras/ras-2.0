@@ -42,6 +42,11 @@ VOICE_MOVES = {
     'meia_volta': ('rotate_right', 2.0),
     'volta_completa': ('rotate_right', 4.0),
 }
+# O que o modo "leve" (celular) não recebe do sensor_data: imagens e nuvem de pontos
+LITE_DROPPED_KEYS = ('camera_image', 'realsense_image', 'lidar_scan')
+
+# Controle por toque (celular): o comando precisa ser renovado a cada < HOLD_TIMEOUT_S
+HOLD_TIMEOUT_S = 0.6
 # Reconhecidos, mas ainda sem comportamento no backend (só aparecem na interface)
 VOICE_PENDING = {'me_segue', 'lado_direito', 'lado_esquerdo'}
 
@@ -603,6 +608,7 @@ class WebSocketServer:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='perception')
 
         self.clients = set()
+        self.lite_clients = set()  # ex.: celular de controle: recebe o estado, sem imagens nem LiDAR
         self.autonomous_mode = False
         self.running = True
         self.tablet_connected = False
@@ -610,6 +616,7 @@ class WebSocketServer:
         self.last_move_time = 0  # Para detectar timeout de movimento manual
         self.last_navigation = None
         self.voice_task = None  # movimento curto disparado por comando de voz
+        self.hold_deadline = None  # movimento "segurando" (celular): para se o comando não for renovado
 
     async def register(self, websocket):
         """Registra novo cliente e envia o estado atual para ele"""
@@ -627,6 +634,7 @@ class WebSocketServer:
     async def unregister(self, websocket):
         """Remove cliente"""
         self.clients.discard(websocket)
+        self.lite_clients.discard(websocket)
         print(f"✗ Cliente desconectado. Total: {len(self.clients)}")
         if not self.clients:
             # Ninguém mais controlando: por segurança para o robô
@@ -638,8 +646,13 @@ class WebSocketServer:
         """Envia mensagem para todos os clientes"""
         if self.clients:
             payload = json.dumps(message, default=_json_default)
+            lite_payload = payload
+            if self.lite_clients and message.get('type') == 'sensor_data':
+                lite_payload = json.dumps(
+                    {k: v for k, v in message.items() if k not in LITE_DROPPED_KEYS}, default=_json_default)
             await asyncio.gather(
-                *[client.send(payload) for client in list(self.clients)],
+                *[client.send(lite_payload if client in self.lite_clients else payload)
+                  for client in list(self.clients)],
                 return_exceptions=True
             )
 
@@ -652,6 +665,9 @@ class WebSocketServer:
                     data = json.loads(message)
                 except json.JSONDecodeError:
                     print(f"⚠ Mensagem inválida ignorada: {message[:80]!r}")
+                    continue
+                if data.get('type') == 'set_lite':
+                    (self.lite_clients.add if data.get('enabled', True) else self.lite_clients.discard)(websocket)
                     continue
                 await self.process_command(data)
         except websockets.ConnectionClosed:
@@ -735,8 +751,11 @@ class WebSocketServer:
             self.robot_moving = is_moving
             if is_moving:
                 self.last_move_time = now
+            # hold=true: o cliente repete o comando enquanto o dedo está na tela; sem renovação, para
+            self.hold_deadline = now + HOLD_TIMEOUT_S if is_moving and data.get('hold') else None
 
         elif cmd_type == 'set_autonomous':
+            self.hold_deadline = None
             self.cancel_voice_move()
             self.autonomous_mode = data.get('enabled', False)
             if 'speed' in data:
@@ -904,6 +923,12 @@ class WebSocketServer:
                     self.tablet_connected = False
                     last_tablet_check = loop_start
 
+                # Trava de segurança do controle por toque: comando não renovado = para os motores
+                if self.hold_deadline is not None and loop_start > self.hold_deadline:
+                    self.hold_deadline = None
+                    self.robot.move('stop', 0)
+                    self.robot_moving = False
+
                 # Detecta timeout de movimento manual (0.3s sem comando = parado)
                 if not self.autonomous_mode and self.robot_moving:
                     if loop_start - self.last_move_time > 0.3:
@@ -1065,7 +1090,7 @@ def parse_args(argv=None):
                         help="graus para alinhar o 0° do LiDAR com a frente do robô")
     parser.add_argument('--lidar-flip', action='store_true', help="LiDAR montado de cabeça para baixo")
     parser.add_argument('--no-auto-connect', action='store_true',
-                        help="no --sim, não conecta o Arduino simulado sozinho")
+                        help="não conecta o Arduino sozinho ao iniciar (no --sim, o simulado; no real, se houver uma única porta)")
     return parser.parse_args(argv)
 
 
@@ -1082,8 +1107,18 @@ def main(argv=None):
 
     server, world = build_system(args)
     server.sensors.start()
-    if args.sim and not args.no_auto_connect:
-        server.robot.connect(SIM_PORT)
+    if not args.no_auto_connect:
+        if args.sim:
+            server.robot.connect(SIM_PORT)
+        else:
+            # Quem controla só pelo celular não tem como clicar em "Conectar": se houver
+            # uma única porta serial (fora a do LiDAR), é o Arduino
+            ports = server.robot.get_available_ports()
+            if len(ports) == 1:
+                print(f"🔌 Uma única porta serial ({ports[0]}): conectando ao Arduino")
+                server.robot.connect(ports[0])
+            elif len(ports) > 1:
+                print(f"⚠ Várias portas seriais ({', '.join(ports)}): escolha a do Arduino no painel")
 
     try:
         print(f"\n{'='*70}")

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
+import { driveVector } from '@/lib/drive';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Square, RotateCw, RotateCcw } from 'lucide-react';
 
 interface DirectionalControlProps {
@@ -15,28 +16,28 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
   const moveForward = useCallback(() => {
     // Frente: M1=+speed, M2=0, M3=-speed (invertido após teste no robô real)
     console.log(`🎯 moveForward chamado com speed=${speed}, enviando: M1=${speed}, M2=0, M3=${-speed}`);
-    onSendCommand(speed, 0, -speed);
+    onSendCommand(...driveVector('forward', speed));
     setActiveDirection('forward');
   }, [speed, onSendCommand]);
   
   const moveBackward = useCallback(() => {
     // Trás: M1=-speed, M2=0, M3=+speed (invertido após teste no robô real)
     console.log(`🎯 moveBackward chamado com speed=${speed}, enviando: M1=${-speed}, M2=0, M3=${speed}`);
-    onSendCommand(-speed, 0, speed);
+    onSendCommand(...driveVector('backward', speed));
     setActiveDirection('backward');
   }, [speed, onSendCommand]);
   
   const moveRight = useCallback(() => {
     // Direita: M1=0, M2=+speed, M3=-speed
     console.log(`🎯 moveRight chamado com speed=${speed}, enviando: M1=0, M2=${speed}, M3=${-speed}`);
-    onSendCommand(0, speed, -speed);
+    onSendCommand(...driveVector('right', speed));
     setActiveDirection('right');
   }, [speed, onSendCommand]);
   
   const moveLeft = useCallback(() => {
     // Esquerda: M1=0, M2=-speed, M3=+speed
     console.log(`🎯 moveLeft chamado com speed=${speed}, enviando: M1=0, M2=${-speed}, M3=${speed}`);
-    onSendCommand(0, -speed, speed);
+    onSendCommand(...driveVector('left', speed));
     setActiveDirection('left');
   }, [speed, onSendCommand]);
   
@@ -50,7 +51,7 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
     // Rotação horária: M1=+speed, M2=+speed, M3=+speed (60% da velocidade)
     const rotateSpeed = Math.round(speed * 0.6);
     console.log(`🎯 rotateClockwise chamado com speed=${speed}, enviando: M1=${rotateSpeed}, M2=${rotateSpeed}, M3=${rotateSpeed}`);
-    onSendCommand(rotateSpeed, rotateSpeed, rotateSpeed);
+    onSendCommand(...driveVector('clockwise', speed));
     setActiveDirection('clockwise');
   }, [speed, onSendCommand]);
 
@@ -58,7 +59,7 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
     // Rotação anti-horária: M1=-speed, M2=-speed, M3=-speed (60% da velocidade)
     const rotateSpeed = Math.round(speed * 0.6);
     console.log(`🎯 rotateCounterClockwise chamado com speed=${speed}, enviando: M1=${-rotateSpeed}, M2=${-rotateSpeed}, M3=${-rotateSpeed}`);
-    onSendCommand(-rotateSpeed, -rotateSpeed, -rotateSpeed);
+    onSendCommand(...driveVector('counterclockwise', speed));
     setActiveDirection('counterclockwise');
   }, [speed, onSendCommand]);
 

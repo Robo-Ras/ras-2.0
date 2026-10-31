@@ -7,6 +7,7 @@
 #   ./start.sh --lan           permite abrir pelo tablet: http://<ip-do-notebook>:8080/tablet
 #   ./start.sh --no-browser    não abre o navegador
 #   ./start.sh --voz           também sobe o assistente de voz José; rosto em http://localhost:8090
+#   ./start.sh --controle      também sobe só o controle para o celular (porta 8100, na rede Wi-Fi)
 #
 # As outras opções vão direto para o backend, ex.:
 #   ./start.sh --lidar ld06 --lidar-port /dev/ttyUSB1 --camera-device /dev/video2
@@ -22,6 +23,7 @@ PYTHON="$VENV/bin/python"
 
 OPEN_BROWSER=1
 VOICE=0
+CONTROLE=0
 VOICE_ARGS=()
 WEB_HOST=127.0.0.1
 BACKEND_ARGS=()
@@ -29,9 +31,10 @@ for arg in "$@"; do
   case "$arg" in
     --no-browser) OPEN_BROWSER=0; VOICE_ARGS+=(--no-browser) ;;
     --voz) VOICE=1 ;;
+    --controle) CONTROLE=1; BACKEND_ARGS+=(--host 0.0.0.0) ;;
     --lan) WEB_HOST=0.0.0.0; BACKEND_ARGS+=(--host 0.0.0.0); VOICE_ARGS+=(--host 0.0.0.0) ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
       echo; echo "Opções do backend:"
       cd "$ROOT/backend" && exec "$PYTHON" robot_autonomous_control.py --help ;;
     *) BACKEND_ARGS+=("$arg") ;;
@@ -63,6 +66,16 @@ PIDS+=($!)
 if [ "$VOICE" = 1 ]; then
   echo "🎙️ Assistente de voz: $PYTHON voz/jose.py ${VOICE_ARGS[*]:-} (rosto em http://localhost:8090)"
   (cd "$ROOT/voz" && exec "$PYTHON" -u jose.py "${VOICE_ARGS[@]}") &
+  PIDS+=($!)
+fi
+
+if [ "$CONTROLE" = 1 ]; then
+  # IP do notebook na rede (a interface da rota padrão; ignora docker0 etc.)
+  LAN_IP="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+  LAN_IP="${LAN_IP:-$(hostname -I | awk '{print $1}')}"
+  echo "📱 Controle do celular: http://$LAN_IP:8100  (celular no mesmo Wi-Fi)"
+  (cd "$ROOT/frontend" && RAS_CONTROLE_ONLY=1 VITE_CACHE_DIR="$ROOT/frontend/node_modules/.vite-controle" \
+    exec ./node_modules/.bin/vite --host 0.0.0.0 --port 8100 --strictPort) &
   PIDS+=($!)
 fi
 

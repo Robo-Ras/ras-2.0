@@ -75,7 +75,28 @@ Sem o José: `./start.sh` (sem `--voz`).
 
 O último comando recebido aparece no card **Controle por Voz** do painel. Lá também dá para falar pelo microfone do navegador (botão *Ativar Voz*, só no Chrome ou Edge).
 
-## 5. Usar pelo tablet
+## 5. Controlar pelo celular
+
+```bash
+./start.sh --voz --controle
+```
+
+O terminal mostra uma linha como `📱 Controle do celular: http://10.189.148.202:8100`. Abra esse endereço no celular, **ligado no mesmo Wi-Fi do notebook**. É uma tela só com os botões de movimento:
+
+- **Segure** um botão para andar; ao **soltar**, o robô para. Se o Wi-Fi cair ou a tela apagar, o backend para o robô sozinho em 0,6 s.
+- **PARAR** (vermelho, no topo) para os motores e desliga o modo autônomo.
+- O controle de velocidade fica na própria tela e é lembrado.
+- O celular recebe só o estado, sem imagens, então não pesa no Wi-Fi.
+
+O painel (8080) e o rosto do José (8090) continuam abertos **só no notebook**. Com `--controle`, o backend (porta 8765) e o controle (8100) ficam acessíveis na rede: qualquer aparelho no mesmo Wi-Fi consegue mover o robô. Use em rede confiável (não em Wi-Fi público).
+
+Quando só existe uma porta serial (fora a do LiDAR), o Arduino conecta sozinho ao iniciar, sem precisar do painel.
+
+## 6. Esconder sensores da interface
+
+Cada câmera e o LiDAR têm um interruptor no canto do card. Desligado, o item some da tela (e do resumo de obstáculos), por exemplo para apresentar só com a C270. Isso **só esconde**: o robô continua lendo todos os sensores. A escolha fica salva no navegador.
+
+## 7. Usar pelo tablet
 
 ```bash
 ./start.sh --lan --voz
@@ -88,7 +109,7 @@ No tablet, na mesma rede Wi-Fi (descubra o IP do notebook com `hostname -I`):
 
 Com `--lan`, qualquer pessoa na mesma rede consegue controlar o robô. Use só em rede confiável.
 
-## 6. Desligar
+## 8. Desligar
 
 `Ctrl+C` no terminal do `start.sh`. Os motores recebem a ordem de parar, e o backend, o painel e o José fecham juntos. Depois desligue a bateria.
 

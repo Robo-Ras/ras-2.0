@@ -43,7 +43,17 @@ const Row = ({ title, source, data }: { title: string; source: string; data?: Ob
   </div>
 );
 
-export const ObstaclePanel = ({ ground, height }: { ground?: ObstacleData; height?: ObstacleData }) => (
+export const ObstaclePanel = ({
+  ground,
+  height,
+  showGround = true,
+  showHeight = true,
+}: {
+  ground?: ObstacleData;
+  height?: ObstacleData;
+  showGround?: boolean; // LiDAR visível na interface
+  showHeight?: boolean; // D435 visível na interface
+}) => (showGround || showHeight) && (
   <Card>
     <CardHeader className="pb-3">
       <CardTitle className="flex items-center gap-2 text-base">
@@ -52,8 +62,8 @@ export const ObstaclePanel = ({ ground, height }: { ground?: ObstacleData; heigh
       </CardTitle>
     </CardHeader>
     <CardContent className="grid gap-4 md:grid-cols-2">
-      <Row title="Chão" source="LiDAR 2D" data={ground} />
-      <Row title="Altura" source="D435 (profundidade) / YOLO" data={height} />
+      {showGround && <Row title="Chão" source="LiDAR 2D" data={ground} />}
+      {showHeight && <Row title="Altura" source="D435 (profundidade) / YOLO" data={height} />}
     </CardContent>
   </Card>
 );

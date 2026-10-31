@@ -25,6 +25,10 @@ interface CameraPanelProps {
   trackingMode?: string;
   yoloEnabled: boolean;
   onToggleYolo: (enabled: boolean) => void;
+  c270Enabled: boolean;
+  d435Enabled: boolean;
+  onC270Change: (enabled: boolean) => void;
+  onD435Change: (enabled: boolean) => void;
 }
 
 const CameraView = ({
@@ -34,6 +38,8 @@ const CameraView = ({
   info,
   objects,
   waitingHint,
+  enabled,
+  onEnabledChange,
 }: {
   title: string;
   subtitle: string;
@@ -41,17 +47,27 @@ const CameraView = ({
   info?: SensorInfo;
   objects: TrackedObject[];
   waitingHint: string;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
 }) => (
   <div className="space-y-1.5">
     <div className="flex items-baseline justify-between gap-2">
       <div className="text-sm font-medium">
         {title} <span className="font-normal text-muted-foreground">· {subtitle}</span>
       </div>
-      <Badge variant={image ? "default" : "outline"} className="text-[10px]">
-        {image ? (info?.kind === "sim" ? "SIMULADA" : "AO VIVO") : "AGUARDANDO"}
-      </Badge>
+      <div className="flex items-center gap-2.5">
+        <Badge variant={enabled && image ? "default" : "outline"} className="text-[10px]">
+          {!enabled ? "OCULTA" : image ? (info?.kind === "sim" ? "SIMULADA" : "AO VIVO") : "AGUARDANDO"}
+        </Badge>
+        <Switch
+          checked={enabled}
+          onCheckedChange={onEnabledChange}
+          aria-label={`Mostrar ${title} na interface`}
+          title={enabled ? `Esconder ${title}` : `Mostrar ${title}`}
+        />
+      </div>
     </div>
-    <div className={`relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border ${image ? "bg-black" : "bg-muted/60"}`}>
+    {enabled && <div className={`relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border ${image ? "bg-black" : "bg-muted/60"}`}>
       {image ? (
         <>
           <img src={`data:image/jpeg;base64,${image}`} alt={`Imagem da ${title}`} className="h-full w-full object-contain" />
@@ -79,7 +95,7 @@ const CameraView = ({
           <p className="text-sm">{waitingHint}</p>
         </div>
       )}
-    </div>
+    </div>}
   </div>
 );
 
@@ -93,11 +109,16 @@ export const CameraPanel = ({
   trackingMode = "basic",
   yoloEnabled,
   onToggleYolo,
+  c270Enabled,
+  d435Enabled,
+  onC270Change,
+  onD435Change,
 }: CameraPanelProps) => {
   const offline = "O backend não está rodando.";
   // Sem a C270, o backend manda a imagem da RealSense também em camera_image: não mostra duas vezes
   const c270Image = camera?.online ? cameraImage : undefined;
   const isSim = camera?.kind === "sim";
+  const visibleObjects = trackedObjects.filter((o) => ((o.camera ?? "camera") === "camera" ? c270Enabled : d435Enabled));
 
   return (
     <Card>
@@ -128,6 +149,8 @@ export const CameraPanel = ({
           image={realsenseImage}
           info={realsense}
           objects={trackedObjects.filter((o) => o.camera === "realsense")}
+          enabled={d435Enabled}
+          onEnabledChange={onD435Change}
           waitingHint={
             !backendConnected ? offline : isSim ? "A D435 não é simulada no --sim." : "Conecte a D435 numa porta USB 3 (azul)."
           }
@@ -138,12 +161,14 @@ export const CameraPanel = ({
           image={c270Image}
           info={camera}
           objects={trackedObjects.filter((o) => (o.camera ?? "camera") === "camera")}
+          enabled={c270Enabled}
+          onEnabledChange={onC270Change}
           waitingHint={backendConnected ? "Conecte a C270 na USB (ou use --camera-device /dev/videoN)." : offline}
         />
 
-        {trackedObjects.length > 0 && (
+        {visibleObjects.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {trackedObjects.slice(0, 8).map((obj) => (
+            {visibleObjects.slice(0, 8).map((obj) => (
               <Badge key={`${obj.camera}-${obj.id}`} variant="secondary" className="gap-1 font-normal">
                 <span className="font-semibold">{obj.class_name ?? `#${obj.id}`}</span>
                 {obj.depth ? <span className="tabular">{obj.depth.toFixed(2)} m</span> : null}

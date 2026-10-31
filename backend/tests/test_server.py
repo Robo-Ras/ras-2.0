@@ -146,6 +146,37 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.3)
         self.assertEqual(self.world.wheels, (0, 0, 0))
 
+    async def test_hold_move_stops_when_not_renewed(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            # celular segurando: renova por ~0.5 s e some (dedo solto / Wi-Fi caiu)
+            for _ in range(5):
+                await c.send(type='move', m1=-100, m2=0, m3=100, hold=True)
+                await asyncio.sleep(0.1)
+            self.assertNotEqual(self.world.wheels, (0, 0, 0))
+            await asyncio.sleep(rac.HOLD_TIMEOUT_S + 0.5)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+
+    async def test_move_without_hold_keeps_going(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='move', m1=-100, m2=0, m3=100)   # botão do painel: sem trava
+            await asyncio.sleep(rac.HOLD_TIMEOUT_S + 0.5)
+            self.assertNotEqual(self.world.wheels, (0, 0, 0))
+            await c.send(type='move', m1=0, m2=0, m3=0)
+
+    async def test_lite_client_gets_no_images(self):
+        async with self.connect() as full, self.connect() as lite:
+            await Client(lite).send(type='set_lite', enabled=True)
+            data_full = await Client(full).wait_for('sensor_data', lambda m: 'camera_image' in m and 'lidar_scan' in m)
+            self.assertIn('camera_image', data_full)
+            data_lite = await Client(lite).wait_for('sensor_data', lambda m: 'robot_moving' in m)
+            for key in rac.LITE_DROPPED_KEYS:
+                self.assertNotIn(key, data_lite)
+            self.assertIn('sensors_status', data_lite)
+
     async def test_voice_command_moves_then_stops(self):
         async with self.connect() as ws:
             c = Client(ws)
