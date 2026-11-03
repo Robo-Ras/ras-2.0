@@ -85,7 +85,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             c = Client(ws)
             await c.wait_for('sensor_data')
             x0, y0, theta = self.world.pose()
-            await c.send(type='move', m1=-150, m2=0, m3=150)     # botão "frente"
+            await c.send(type='move', m1=150, m2=0, m3=-150)     # botão "frente"
             moving = await c.wait_for('sensor_data', lambda m: m['robot_moving'])
             self.assertTrue(moving['robot_moving'])
             await asyncio.sleep(0.6)
@@ -152,7 +152,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             await c.wait_for('sensor_data')
             # celular segurando: renova por ~0.5 s e some (dedo solto / Wi-Fi caiu)
             for _ in range(5):
-                await c.send(type='move', m1=-100, m2=0, m3=100, hold=True)
+                await c.send(type='move', m1=100, m2=0, m3=-100, hold=True)
                 await asyncio.sleep(0.1)
             self.assertNotEqual(self.world.wheels, (0, 0, 0))
             await asyncio.sleep(rac.HOLD_TIMEOUT_S + 0.5)
@@ -162,7 +162,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
         async with self.connect() as ws:
             c = Client(ws)
             await c.wait_for('sensor_data')
-            await c.send(type='move', m1=-100, m2=0, m3=100)   # botão do painel: sem trava
+            await c.send(type='move', m1=100, m2=0, m3=-100)   # botão do painel: sem trava
             await asyncio.sleep(rac.HOLD_TIMEOUT_S + 0.5)
             self.assertNotEqual(self.world.wheels, (0, 0, 0))
             await c.send(type='move', m1=0, m2=0, m3=0)

@@ -491,8 +491,10 @@ class RobotController:
         """Move o robô em uma direção"""
 
         commands = {
-            'forward': (-speed, 0, speed),           # Frente: M1=-speed, M2=0, M3=+speed
-            'backward': (speed, 0, -speed),          # Trás: M1=+speed, M2=0, M3=-speed
+            # Frente/trás invertidos após o teste no robô real (os botões do painel e do celular
+            # usam os mesmos valores: frontend/src/lib/drive.ts)
+            'forward': (speed, 0, -speed),           # Frente: M1=+speed, M2=0, M3=-speed
+            'backward': (-speed, 0, speed),          # Trás: M1=-speed, M2=0, M3=+speed
             'left': (0, -speed, speed),              # Esquerda: M1=0, M2=-speed, M3=+speed
             'right': (0, speed, -speed),             # Direita: M1=0, M2=+speed, M3=-speed
             'rotate_right': (speed, speed, speed),   # Rotação horária in-place

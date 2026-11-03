@@ -23,11 +23,11 @@ MAX_ANGULAR_SPEED = 3.0   # rad/s
 ROBOT_RADIUS = 0.2        # m
 
 # Vetores de roda dos comandos do frontend (DirectionalControl.tsx):
-#   frente = (-s, 0, s), direita = (0, s, -s), giro horário = (s, s, s)
+#   frente = (s, 0, -s), direita = (0, s, -s), giro horário = (s, s, s)
 # Qualquer comando é decomposto nesses três movimentos, então o simulador
 # obedece exatamente o que os botões da interface dizem fazer.
 _PRIMITIVES = np.array([
-    [-1.0, 0.0, 1.0],   # frente
+    [1.0, 0.0, -1.0],   # frente
     [0.0, 1.0, -1.0],   # direita
     [1.0, 1.0, 1.0],    # giro horário
 ]).T
