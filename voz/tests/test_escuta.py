@@ -49,6 +49,94 @@ class ChamarJoseTest(unittest.TestCase):
         self.assertEqual(jose.identificar_comando(resto)[1], "frente")
 
 
+class PalavraChaveTest(unittest.TestCase):
+    """O que vale é a palavra-chave ("frente"), não a frase inteira ("vai pra frente")."""
+
+    def comando(self, texto):
+        achado = jose.identificar_comando(jose.normalizar(texto))
+        return achado[1] if achado else None
+
+    def test_so_a_palavra_ja_basta(self):
+        for texto, esperado in [("frente", "frente"), ("Trás", "tras"), ("atrás", "tras"), ("ré", "tras"),
+                                ("Direita", "direita"), ("esquerda!", "esquerda")]:
+            self.assertEqual(self.comando(texto), esperado, texto)
+
+    def test_frase_com_a_palavra_no_meio(self):
+        for texto, esperado in [("vai pra frente", "frente"), ("Vai para frente.", "frente"),
+                                ("por favor, ande para a esquerda", "esquerda"), ("vira à direita", "direita"),
+                                ("avança", "frente"), ("recua um pouco", "tras")]:
+            self.assertEqual(self.comando(texto), esperado, texto)
+
+    def test_primeira_palavra_vale(self):
+        self.assertEqual(self.comando("esquerda e depois frente"), "esquerda")
+
+    def test_giros_seguir_e_lado(self):
+        self.assertEqual(self.comando("dê meia volta"), "meia_volta")
+        self.assertEqual(self.comando("dê uma volta completa"), "volta_completa")
+        self.assertEqual(self.comando("me segue"), "me_segue")
+        self.assertEqual(self.comando("fica do meu lado esquerdo"), "lado_esquerdo")  # não vira "esquerda"
+        self.assertEqual(self.comando("fica do meu lado direito"), "lado_direito")
+
+    def test_parar_tem_prioridade_e_nao_confunde_com_para_frente(self):
+        self.assertEqual(self.comando("para!"), "parar")
+        self.assertEqual(self.comando("vai pra frente e para"), "parar")
+        self.assertEqual(self.comando("vai para frente"), "frente")  # "para" aqui é preposição
+
+    def test_conversa_comum_nao_vira_comando(self):
+        for texto in ("bom dia", "tudo bem com você", "obrigado", ""):
+            self.assertIsNone(self.comando(texto), texto)
+
+
+class ChamarSemJoseTest(unittest.TestCase):
+    """Comando ouvido sem ninguém chamar o José: mostra uma dica na tela (ou executa, se o José não exigir)."""
+
+    class BackendFalso:
+        def __init__(self):
+            self.conectado = type("E", (), {"is_set": staticmethod(lambda: True)})()
+            self.enviados = []
+
+        def limpar_eventos(self):
+            pass
+
+        def enviar(self, comando, texto):
+            self.enviados.append(comando)
+
+        def eventos_pendentes(self):
+            return []
+
+    def setUp(self):
+        self.backend = self.BackendFalso()
+        self.app = jose.AssistenteApp(jose.OuvinteDeAudio(ModeloFalso()), self.backend)
+        self.exige = jose.EXIGE_CHAMAR
+
+    def tearDown(self):
+        jose.EXIGE_CHAMAR = self.exige
+
+    def test_sem_chamar_nao_anda_mas_avisa(self):
+        jose.EXIGE_CHAMAR = True
+        self.app._processar_texto("Vai para frente.")
+        self.assertEqual(self.backend.enviados, [])
+        self.assertEqual(self.app.estado()["estado"], "acordado")
+        self.assertIn("José", self.app.estado()["dica"])
+
+    def test_chamando_o_jose_na_mesma_frase_anda(self):
+        jose.EXIGE_CHAMAR = True
+        self.app._processar_texto("José, frente")
+        self.assertEqual(self.backend.enviados, ["frente"])
+        self.assertEqual(self.app.estado()["dica"], "")
+
+    def test_sem_exigir_chamar_a_palavra_basta(self):
+        jose.EXIGE_CHAMAR = False
+        self.app._processar_texto("frente")
+        self.assertEqual(self.backend.enviados, ["frente"])
+
+    def test_conversa_comum_sem_jose_nao_avisa_nada(self):
+        jose.EXIGE_CHAMAR = True
+        self.app._processar_texto("bom dia pessoal")
+        self.assertEqual(self.app.estado()["dica"], "")
+        self.assertEqual(self.backend.enviados, [])
+
+
 class FraseTest(unittest.TestCase):
     """Alimenta o OuvinteDeAudio em tempo real, em blocos de 0,1 s, como o microfone."""
 

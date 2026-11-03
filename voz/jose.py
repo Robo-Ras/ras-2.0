@@ -72,6 +72,10 @@ BLOCO_VAD_S = 0.1
 SILENCIO_FIM_FALA_S = 1.0  # conversa: espera mais, a pessoa pensa entre as palavras
 FALA_MIN_S = 0.4  # mais curto que isso é estalo/ruído
 MAX_FALA_S = 30
+# Exige dizer "José" antes de um comando. Com JOSE_EXIGE_CHAMAR=0 no voz/.env, "frente" já basta (cuidado em
+# lugar com gente falando: "frente", "direita" e "esquerda" são palavras comuns)
+EXIGE_CHAMAR = os.environ.get("JOSE_EXIGE_CHAMAR", "1") != "0"
+DICA_S = 4  # quanto tempo a dica "diga José" fica na tela
 SILENCIO_FIM_COMANDO_S = 0.6  # comandos são frases curtas: responde mais rápido
 FALA_MIN_COMANDO_S = 0.3
 MAX_COMANDO_S = 6
@@ -139,22 +143,37 @@ def apos_chamar_jose(texto_normalizado: str):
     return None
 
 
+# Palavra-chave de cada direção: o que vale é a palavra ("frente"), não a frase ("vai pra frente").
+# Se a frase tiver mais de uma, vale a primeira que aparecer.
+PALAVRAS_DIRECAO = [
+    (r"\b(frente|avanc\w*)\b", "frente"),
+    (r"\b(a?tras|re|recu\w*)\b", "tras"),  # "trás", "atrás", "ré", "recua"
+    (r"\bdireita\b", "direita"),
+    (r"\besquerda\b", "esquerda"),
+]
+
+
 def identificar_comando(texto_normalizado: str):
-    """Devolve (texto mostrado na tela, id do comando enviado ao backend) ou None."""
-    if re.search(RE_PARAR, texto_normalizado):
+    """Devolve (texto mostrado na tela, id do comando enviado ao backend) ou None.
+
+    Procura palavras-chave: "frente" já basta, não precisa dizer "vai pra frente".
+    """
+    if re.search(RE_PARAR, texto_normalizado):  # parar sempre tem prioridade
         return "Parar", "parar"
-    m = re.search(r"vai (?:pra|para) a? ?(frente|tras|direita|esquerda)", texto_normalizado)
-    if m:
-        return f"Vai pra {DIRECOES[m.group(1)]}", m.group(1)
-    if re.search(r"\bme segue\b", texto_normalizado):
-        return "Me Segue", "me_segue"
-    if re.search(r"meia volta", texto_normalizado):
+    if re.search(r"\bmeia volta\b", texto_normalizado):
         return "Dê Meia Volta", "meia_volta"
-    if re.search(r"volta completa", texto_normalizado):
+    if re.search(r"\bvolta completa\b", texto_normalizado):
         return "Dê Volta Completa", "volta_completa"
-    m = re.search(r"fica do meu lado (direito|esquerdo)", texto_normalizado)
+    if re.search(r"\bsegue\b", texto_normalizado):
+        return "Me Segue", "me_segue"
+    m = re.search(r"\blado\b.*\b(direit[oa]|esquerd[oa])\b", texto_normalizado)
     if m:
-        return f"Fica do Meu Lado {LADOS[m.group(1)]}", f"lado_{m.group(1)}"
+        lado = "direito" if m.group(1).startswith("direit") else "esquerdo"
+        return f"Fica do Meu Lado {LADOS[lado]}", f"lado_{lado}"
+    achados = [(m.start(), comando) for regex, comando in PALAVRAS_DIRECAO if (m := re.search(regex, texto_normalizado))]
+    if achados:
+        comando = min(achados)[1]
+        return f"Vai pra {DIRECOES[comando]}", comando
     return None
 
 
@@ -545,6 +564,7 @@ class AssistenteApp:
         self.historico = []
         self._comando_em_execucao = None
         self._confirmado = False
+        self._dica_ate = 0.0
         self._mostrar_acordado()
 
     def _novo_estado(self, estado: str, comando: str = ""):
@@ -588,6 +608,7 @@ class AssistenteApp:
                 "progresso": self.player.progresso() if historia else 0.0,
                 "transcricao": self.transcricao,
                 "velocidade": self.velocidade,
+                "dica": 'Diga "José" antes do comando' if time.monotonic() < self._dica_ate else "",
             }
 
     def passo(self):
@@ -771,6 +792,12 @@ class AssistenteApp:
         if self.state == self.ACORDADO:
             resto = apos_chamar_jose(normalizado)
             if resto is None:
+                comando = identificar_comando(normalizado)
+                if comando and not EXIGE_CHAMAR:
+                    self._executar_comando(*comando, texto)
+                elif comando:
+                    # Ouviu um comando, mas ninguém chamou o José: avisa na tela em vez de ignorar em silêncio
+                    self._dica_ate = time.monotonic() + DICA_S
                 return
             # "José, vai pra frente" numa frase só: já atende, sem esperar um segundo "José"
             if not self._atender_pedido(resto, texto):

@@ -35,17 +35,26 @@ export const voiceCommandLabel = (command: string) =>
 const normalize = (text: string) =>
   text.toLowerCase().trim().normalize('NFKD').replace(/[̀-ͯ]/g, '');
 
+// Palavra-chave de cada direção: vale a palavra ("frente"), não a frase ("vai pra frente").
+// Se tiver mais de uma na frase, vale a primeira que aparecer. Mesmo vocabulário do voz/jose.py.
+const DIRECTION_KEYWORDS: [RegExp, VoiceCommandId][] = [
+  [/\b(frente|avanc\w*)\b/, 'frente'],
+  [/\b(a?tras|re|recu\w*)\b/, 'tras'],
+  [/\bdireita\b/, 'direita'],
+  [/\besquerda\b/, 'esquerda'],
+];
+
 export const identifyVoiceCommand = (text: string): VoiceCommandId | null => {
   const t = normalize(text);
   // "para" só vale no fim da frase ("Para!"), para não disparar com "vai para a frente"
   if (/\b(parar|pare|stop)\b|\bpara\b\s*(?:[.!?,]|$)/.test(t)) return 'parar';
-  const dir = t.match(/(?:vai|anda|va) (?:pra|para) a? ?(frente|tras|direita|esquerda)/);
-  if (dir) return dir[1] as VoiceCommandId;
-  if (/\bme segue\b/.test(t)) return 'me_segue';
-  if (/meia volta/.test(t)) return 'meia_volta';
-  if (/volta completa/.test(t)) return 'volta_completa';
-  const side = t.match(/fica do meu lado (direito|esquerdo)/);
-  if (side) return `lado_${side[1]}` as VoiceCommandId;
+  if (/\bmeia volta\b/.test(t)) return 'meia_volta';
+  if (/\bvolta completa\b/.test(t)) return 'volta_completa';
+  if (/\bsegue\b/.test(t)) return 'me_segue';
+  const side = t.match(/\blado\b.*\b(direit[oa]|esquerd[oa])\b/);
+  if (side) return side[1].startsWith('direit') ? 'lado_direito' : 'lado_esquerdo';
+  const found = DIRECTION_KEYWORDS.map(([re, id]) => ({ id, at: t.search(re) })).filter((k) => k.at >= 0);
+  if (found.length) return found.reduce((a, b) => (b.at < a.at ? b : a)).id;
   if (/\bautonomo\b/.test(t)) return 'autonomo';
   if (/\bmanual\b/.test(t)) return 'manual';
   return null;

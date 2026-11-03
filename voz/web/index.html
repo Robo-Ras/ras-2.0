@@ -115,6 +115,18 @@
     text-overflow: ellipsis;
   }
   #velocidade { right: 10px; bottom: 10px; font-size: 13px; }
+  #dica {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 10px 22px;
+    border-radius: 999px;
+    background: var(--principal);
+    color: #fff;
+    font-size: 24px;
+    font-weight: bold;
+  }
   #aviso {
     position: fixed;
     inset: 0;
@@ -145,6 +157,7 @@
 </div>
 <div id="transcricao"></div>
 <div id="velocidade"></div>
+<div id="dica" hidden></div>
 <div id="aviso">José não está respondendo.<br>Rode: python voz/jose.py</div>
 
 <script>
@@ -219,6 +232,8 @@
 
     $('transcricao').textContent = e.transcricao;
     $('velocidade').textContent = e.velocidade;
+    $('dica').textContent = e.dica || '';
+    $('dica').hidden = !e.dica;
   };
 
   const atualizar = async () => {
