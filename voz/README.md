@@ -14,19 +14,22 @@ sudo apt install libportaudio2
 ~/L515/bin/pip install -r ~/ras-2.0/voz/requirements.txt     # mesmo venv do backend
 ```
 
-Na primeira execução o faster-whisper baixa o modelo `small` (~500 MB). Na primeira vez que entrar no modo conversa, baixa também o `large-v3-turbo` (~1,6 GB).
+Na primeira execução o faster-whisper baixa o modelo `base` (~150 MB), usado para "José" e os comandos. Na primeira vez que entrar no modo conversa, baixa também o `small` (~500 MB).
 
 ### Chave do Gemini (modo conversa)
 
 1. Entre em https://aistudio.google.com/apikey com uma conta Google e clique em **Create API key** (plano gratuito, sem cartão).
-2. No notebook do robô, salve a chave no `~/.bashrc` (não coloque no git):
+2. No notebook do robô, crie o arquivo `voz/.env` com a chave (ele **não vai para o git**: está no `.gitignore`). O José lê esse arquivo sozinho, tanto pelo `./start.sh --voz` quanto rodando o `jose.py` direto:
 
    ```bash
-   echo 'export GEMINI_API_KEY="cole-a-chave-aqui"' >> ~/.bashrc
-   source ~/.bashrc
+   cd ~/ras-2.0/voz
+   echo 'GEMINI_API_KEY=cole-a-chave-aqui' > .env
+   chmod 600 .env
    ```
 
-3. Teste: `~/L515/bin/python -c "from google import genai; print(genai.Client().models.generate_content(model='gemini-3.8-flash', contents='oi').text)"`
+   (Se preferir, uma variável de ambiente `GEMINI_API_KEY` no `~/.bashrc` também funciona e tem prioridade sobre o `.env`.)
+
+3. Teste: `~/L515/bin/python -c "from google import genai; print(genai.Client().models.generate_content(model='gemini-3.1-flash-lite', contents='oi').text)"`
 
 No plano gratuito o Google pode usar as conversas para melhorar os produtos dele, e há limite de pedidos por minuto e por dia. O modo conversa (Gemini e voz) precisa de internet; os outros modos continuam offline.
 
@@ -52,6 +55,17 @@ O navegador abre sozinho no rosto (`--no-browser` evita). **Clique na página pa
 O áudio das histórias toca no computador onde o `jose.py` roda, não no navegador.
 
 O endereço do backend também pode vir de `RAS_WS_URL`. Se o backend não estiver no ar, o José continua funcionando e tenta reconectar a cada 3 s (comandos falados nesse meio-tempo são descartados, para o robô não sair andando depois).
+
+## Velocidade (por que o José responde rápido)
+
+O Whisper gasta o **mesmo tempo para 1 s ou 30 s de áudio** (neste i5: ~3 s o `small`, ~1 s o `base`). Por isso o José **não** transcreve blocos fixos de 1,5 s o tempo todo: ele espera a frase acabar (0,6 s de silêncio nos comandos, 1 s na conversa) e transcreve **uma vez só**, sem tentativas repetidas. No silêncio ele quase não usa CPU. Dá para dizer **"José, vai pra frente"** numa frase só.
+
+| Variável | Padrão | Para quê |
+|----------|--------|----------|
+| `JOSE_MODELO` | `base` | Modelo de "José" e comandos. `small` é mais preciso e ~3x mais lento; `tiny` é ainda mais rápido e erra mais |
+| `JOSE_THREADS` | metade das threads (4 no i5) | Usar todas as 8 threads deixa mais lento (são só 4 núcleos físicos) |
+
+O limite de "o que é fala" se adapta ao ruído do ambiente (em lugar barulhento, os primeiros ~3 s servem para aprender o ruído).
 
 ## Fluxo
 
@@ -97,7 +111,7 @@ Diga **"Conversa"** enquanto o José está ouvindo.
 - O Gemini recebe o áudio e a transcrição. Pelo tom de voz ele identifica a emoção; se não for neutra, a resposta começa com "Notei que você parece um pouco triste/feliz/...".
 - Ele lembra as últimas perguntas enquanto a conversa durar; **"Voltar"** apaga a memória e volta ao menu (ouvindo comandos, sem precisar dizer "José").
 - **"História"** e os comandos de movimento também funcionam na conversa; depois do movimento ele volta a conversar.
-- Configurável por variáveis de ambiente: `GEMINI_API_KEY`, `JOSE_GEMINI_MODELO` (padrão `gemini-3.8-flash`), `JOSE_VOZ` (padrão `pt-BR-AntonioNeural`), `JOSE_MODELO_CONVERSA` (padrão `large-v3-turbo`; use `medium` ou `small` se ficar lento).
+- Configurável por variáveis de ambiente (ou no `voz/.env`): `GEMINI_API_KEY`, `JOSE_GEMINI_MODELO` (padrão `gemini-3.1-flash-lite`: responde em ~1 a 2 s; o `gemini-3.8-flash` estava sobrecarregado, com erro 503), `JOSE_VOZ` (padrão `pt-BR-AntonioNeural`), `JOSE_MODELO_CONVERSA` (padrão `small`; o `large-v3-turbo` é mais preciso, mas levava dezenas de segundos neste notebook, e o Gemini já ouve o áudio). Se o Gemini não responder em 15 s, o José avisa em vez de ficar mudo.
 - A detecção de fim de fala usa o volume do microfone (`ENERGIA_MIN_VOZ`, `FATOR_VOZ` em `jose.py`). Em lugar muito barulhento ajuste esses valores.
 
 ## Modo história

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Testes internos, sem precisar do robô:
 #   backend  - drivers de LiDAR, Arduino simulado, navegação, servidor WebSocket, YOLO
+#   voz      - escuta do José (uma transcrição por frase, "José" tolerante)
 #   frontend - checagem de tipos e build
 set -euo pipefail
 
@@ -11,6 +12,9 @@ PYTHON="$VENV/bin/python"
 
 echo "== Backend =="
 (cd "$ROOT/backend" && "$PYTHON" -m unittest discover -s tests -v 2>&1 | grep -E " \.\.\. (ok|FAIL|ERROR|skipped)|^Ran |^OK|^FAILED|^(FAIL|ERROR):|Error|assert" ; exit "${PIPESTATUS[0]}")
+
+echo; echo "== Voz (José) =="
+(cd "$ROOT/voz" && "$PYTHON" -m unittest discover -s tests -v 2>&1 | grep -E " \.\.\. (ok|FAIL|ERROR|skipped)|^Ran |^OK|^FAILED|^(FAIL|ERROR):|Error|assert" ; exit "${PIPESTATUS[0]}")
 
 echo; echo "== Frontend =="
 cd "$ROOT/frontend"

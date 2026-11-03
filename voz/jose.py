@@ -1,5 +1,7 @@
 # pip install -r requirements.txt
 import argparse
+import collections
+import difflib
 import asyncio
 import glob
 import io
@@ -31,24 +33,57 @@ from google.genai import types
 from pydantic import BaseModel
 from websockets.sync.client import connect as ws_connect
 
+
+
+def carregar_env():
+    """Lê voz/.env (CHAVE=valor por linha; fora do git) para as variáveis de ambiente, sem sobrescrever as já definidas."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            for linha in f:
+                linha = linha.strip()
+                if linha and not linha.startswith("#") and "=" in linha:
+                    chave, valor = linha.split("=", 1)
+                    os.environ.setdefault(chave.strip(), valor.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+
+carregar_env()  # antes das constantes abaixo, que leem JOSE_* e GEMINI_*
+
 SAMPLE_RATE = 16000
 CHUNK_SECONDS = 1.5
-MAX_BUFFER_SECONDS = CHUNK_SECONDS * 3  # descarta áudio mais antigo se o processamento atrasar
-MODEL_SIZE = "small"
+# O Whisper gasta o mesmo tempo (~3 s o "small", ~1 s o "base" neste notebook) para 1 s ou 30 s de áudio.
+# Por isso o José não transcreve em blocos fixos: espera a frase acabar e transcreve uma vez só.
+MODEL_SIZE = os.environ.get("JOSE_MODELO", "base")  # comandos e "José"; "small" é mais preciso e ~3x mais lento
 LANGUAGE = "pt"
-CPU_THREADS = os.cpu_count() or 4
+# Threads = núcleos físicos (o i5 do robô tem 4 núcleos / 8 threads; usar 8 deixa tudo mais lento)
+CPU_THREADS = int(os.environ.get("JOSE_THREADS", 0)) or max(2, (os.cpu_count() or 8) // 2)
+# temperature=0: sem tentar de novo em temperaturas maiores (triplicava o tempo); sem contexto da frase anterior
+TRANSCRICAO = dict(language=LANGUAGE, beam_size=1, temperature=0.0, condition_on_previous_text=False, vad_filter=True)
+# Limite de tokens: sem as tentativas repetidas, o modelo leve às vezes entra num laço ("me-cô-me-cô-...")
+TRANSCRICAO_COMANDO = dict(TRANSCRICAO, max_new_tokens=48)  # comando é frase curta
+TRANSCRICAO_CONVERSA = dict(TRANSCRICAO, max_new_tokens=200)
 
-# Modo conversa: modelo maior (mais preciso, mais lento), carregado só na primeira vez que entra no modo
-MODELO_CONVERSA = os.environ.get("JOSE_MODELO_CONVERSA", "large-v3-turbo")
+# Modo conversa: o Gemini já recebe o áudio, então a transcrição local é só uma dica e para achar
+# "voltar"/"história"/comandos. "small" basta (o large-v3-turbo levava dezenas de segundos na CPU)
+MODELO_CONVERSA = os.environ.get("JOSE_MODELO_CONVERSA", "small")
 BLOCO_VAD_S = 0.1
-SILENCIO_FIM_FALA_S = 1.0
+SILENCIO_FIM_FALA_S = 1.0  # conversa: espera mais, a pessoa pensa entre as palavras
 FALA_MIN_S = 0.4  # mais curto que isso é estalo/ruído
 MAX_FALA_S = 30
+SILENCIO_FIM_COMANDO_S = 0.6  # comandos são frases curtas: responde mais rápido
+FALA_MIN_COMANDO_S = 0.3
+MAX_COMANDO_S = 6
 ENERGIA_MIN_VOZ = 0.01  # RMS do áudio float32; abaixo disso nunca é fala
 FATOR_VOZ = 3.0  # fala = energia acima de 3x o ruído de fundo
+JANELA_RUIDO_BLOCOS = 30  # o "ruído de fundo" é o percentil 20 dos últimos ~3 s (se adapta a lugar barulhento)
+RUIDO_MAX = 0.02  # teto: com mais que isso o limite de fala passaria da voz normal
 MAX_HISTORICO = 10  # mensagens (pergunta + resposta) lembradas na conversa
 
-GEMINI_MODELO = os.environ.get("JOSE_GEMINI_MODELO", "gemini-3.8-flash")
+# "lite": responde em ~1 s (o gemini-3.8-flash estava sobrecarregado e o gemini-3-flash levava ~7 s)
+GEMINI_MODELO = os.environ.get("JOSE_GEMINI_MODELO", "gemini-3.1-flash-lite")
+GEMINI_TIMEOUT_MS = 15000  # sem isso, um 503 do Google deixava o José mudo por mais de 1 minuto
 VOZ_TTS = os.environ.get("JOSE_VOZ", "pt-BR-AntonioNeural")
 PRE_PROMPT = (
     "Seu nome é José e você é um robô. Responda em português do Brasil com no máximo 50 palavras, "
@@ -88,6 +123,20 @@ def normalizar(texto: str) -> str:
     texto = texto.lower().strip()
     texto = unicodedata.normalize("NFKD", texto)
     return "".join(c for c in texto if not unicodedata.combining(c))
+
+
+def apos_chamar_jose(texto_normalizado: str):
+    """Texto depois do "José" se a frase chama o José, senão None.
+
+    Aceita erros comuns do reconhecimento ("jone", "jome", "joze"): palavra parecida com "jose".
+    Chamar sem querer só troca o rosto; o robô só anda com um comando reconhecido depois.
+    """
+    palavras = texto_normalizado.split()
+    for i, palavra in enumerate(palavras):
+        palavra = palavra.strip(".,!?;:")
+        if palavra == "jose" or difflib.SequenceMatcher(None, palavra, "jose").ratio() >= 0.75:
+            return " ".join(palavras[i + 1:])
+    return None
 
 
 def identificar_comando(texto_normalizado: str):
@@ -190,6 +239,12 @@ class OuvinteDeAudio:
         self._running = threading.Event()
         self._pausado = threading.Event()
         self._geracao = 0  # muda a cada pausa/retomada, para descartar transcrições de áudio antigo
+        # Energia dos últimos blocos, para estimar o ruído de fundo. Vive no objeto (não por frase) para o José
+        # não "reaprender" o ruído do zero a cada frase. Começa supondo silêncio: se a primeira coisa ouvida já
+        # for fala, ela não pode virar o "ruído de fundo".
+        self._energias_recentes = collections.deque(
+            [ENERGIA_MIN_VOZ / FATOR_VOZ] * (JANELA_RUIDO_BLOCOS // 3), maxlen=JANELA_RUIDO_BLOCOS
+        )
         self._stream = None
         self._worker = None
 
@@ -246,42 +301,29 @@ class OuvinteDeAudio:
             self._stream.close()
 
     def _process_loop(self):
-        proxima_leitura = time.monotonic() + self.chunk_seconds
         while self._running.is_set():
             if self.modo == self.CONVERSA:
-                self._ouvir_fala()
-                proxima_leitura = time.monotonic() + self.chunk_seconds
-                continue
-            # Desconta o tempo gasto transcrevendo, senão cada bloco fica maior e mais lento que o anterior
-            time.sleep(max(0.0, proxima_leitura - time.monotonic()))
-            proxima_leitura = time.monotonic() + self.chunk_seconds
-            audio, geracao = self._pegar_audio()
-            if audio is None or audio.size == 0:
-                continue
-            max_amostras = int(MAX_BUFFER_SECONDS * self.sample_rate)
-            if audio.size > max_amostras:
-                audio = audio[-max_amostras:]  # descarta o áudio mais antigo para não acumular atraso
-            duracao_audio = audio.size / self.sample_rate
-            inicio_processamento = time.time()
-            segments, _ = self.model.transcribe(
-                audio, language=LANGUAGE, beam_size=1, vad_filter=True
-            )
-            texto = "".join(segment.text for segment in segments).strip()
-            self._publicar(geracao, texto, time.time() - inicio_processamento, duracao_audio)
+                self._ouvir_fala(self.CONVERSA, SILENCIO_FIM_FALA_S, FALA_MIN_S, MAX_FALA_S, self._transcrever_fala)
+            else:
+                self._ouvir_fala(
+                    self.COMANDOS, SILENCIO_FIM_COMANDO_S, FALA_MIN_COMANDO_S, MAX_COMANDO_S, self._transcrever_comando
+                )
 
-    def _ouvir_fala(self):
-        """Junta o áudio da fala até 1 s de silêncio (pela energia do som) e transcreve tudo de uma vez."""
+    def _ouvir_fala(self, modo, silencio_fim_s, fala_min_s, max_fala_s, transcrever):
+        """Junta o áudio de uma frase (até `silencio_fim_s` de silêncio, pela energia do som) e transcreve tudo de uma vez."""
         fala, anterior, silencio = [], None, 0.0
-        ruido = ENERGIA_MIN_VOZ / FATOR_VOZ
+        recentes = self._energias_recentes
         geracao = self._geracao
-        while self._running.is_set() and self.modo == self.CONVERSA:
+        while self._running.is_set() and self.modo == modo:
             time.sleep(BLOCO_VAD_S)
             bloco, geracao_atual = self._pegar_audio()
             if geracao_atual != geracao:
-                fala, anterior, silencio, geracao = [], None, 0.0, geracao_atual
+                fala, anterior, silencio, geracao = [], None, 0.0, geracao_atual  # o ruído lembrado continua valendo
             if bloco is None:
                 continue
             energia = float(np.sqrt(np.mean(np.square(bloco))))
+            recentes.append(energia)
+            ruido = min(float(np.percentile(recentes, 20)), RUIDO_MAX)
             falando = energia > max(ruido * FATOR_VOZ, ENERGIA_MIN_VOZ)
             if not fala:
                 if falando:
@@ -289,17 +331,28 @@ class OuvinteDeAudio:
                     fala = [anterior, bloco] if anterior is not None else [bloco]
                     silencio = 0.0
                 else:
-                    ruido = 0.95 * ruido + 0.05 * energia
                     anterior = bloco
                 continue
             fala.append(bloco)
             silencio = 0.0 if falando else silencio + bloco.size / self.sample_rate
             duracao = sum(b.size for b in fala) / self.sample_rate
-            if silencio >= SILENCIO_FIM_FALA_S or duracao >= MAX_FALA_S:
-                if duracao - silencio >= FALA_MIN_S:
-                    self._transcrever_fala(np.concatenate(fala))
+            if silencio >= silencio_fim_s or duracao >= max_fala_s:
+                if duracao - silencio >= fala_min_s:
+                    transcrever(np.concatenate(fala))
                     return
                 fala, silencio = [], 0.0
+
+    def _transcrever_comando(self, audio):
+        """Frase curta do modo normal ("José", "vai pra frente"): não pausa o microfone."""
+        geracao = self._geracao
+        inicio_processamento = time.time()
+        try:
+            segments, _ = self.model.transcribe(audio, **TRANSCRICAO_COMANDO)
+            texto = "".join(segment.text for segment in segments).strip()
+        except Exception as e:
+            print(f"⚠ Erro ao transcrever: {e}")
+            texto = ""
+        self._publicar(geracao, texto, time.time() - inicio_processamento, audio.size / self.sample_rate)
 
     def _transcrever_fala(self, audio):
         self.pausar()  # José não escuta enquanto pensa e responde
@@ -307,9 +360,7 @@ class OuvinteDeAudio:
         self.transcrevendo_fala.set()
         inicio_processamento = time.time()
         try:
-            segments, _ = self.modelo_conversa.transcribe(
-                audio, language=LANGUAGE, beam_size=5, vad_filter=True
-            )
+            segments, _ = self.modelo_conversa.transcribe(audio, **TRANSCRICAO_CONVERSA)
             texto = "".join(segment.text for segment in segments).strip()
         except Exception as e:
             print(f"⚠ Erro ao transcrever a fala: {e}")
@@ -404,7 +455,8 @@ class CerebroGemini:
             return "Ainda não tenho a chave do Gemini configurada."
         try:
             if self._cliente is None:
-                self._cliente = genai.Client()
+                self._cliente = genai.Client(http_options=types.HttpOptions(
+                    timeout=GEMINI_TIMEOUT_MS, retry_options=types.HttpRetryOptions(attempts=2)))
             conteudos = [
                 types.Content(role=papel, parts=[types.Part.from_text(text=fala)]) for papel, fala in historico
             ]
@@ -419,7 +471,7 @@ class CerebroGemini:
                     system_instruction=PRE_PROMPT,
                     response_mime_type="application/json",
                     response_schema=RespostaJose,
-                    thinking_config=types.ThinkingConfig(thinking_level="low"),
+                    thinking_config=types.ThinkingConfig(thinking_level="minimal"),
                 ),
             )
             dados = resultado.parsed or RespostaJose.model_validate_json(resultado.text)
@@ -687,6 +739,20 @@ class AssistenteApp:
 
     # ---- Texto reconhecido ----
 
+    def _atender_pedido(self, normalizado: str, texto: str) -> bool:
+        """Conversa, história ou comando de movimento. Devolve False se a frase não pediu nada disso."""
+        if re.search(r"\bconversa", normalizado):
+            self._iniciar_conversa()
+            return True
+        if re.search(r"\bhistori", normalizado):
+            self._iniciar_historias()
+            return True
+        comando = identificar_comando(normalizado)
+        if comando:
+            self._executar_comando(*comando, texto)
+            return True
+        return False
+
     def _processar_texto(self, texto: str, audio=None):
         if texto:
             self._atualizar_transcricao_topo(texto)
@@ -703,20 +769,16 @@ class AssistenteApp:
         normalizado = normalizar(texto)
 
         if self.state == self.ACORDADO:
-            if "jose" in normalizado:
+            resto = apos_chamar_jose(normalizado)
+            if resto is None:
+                return
+            # "José, vai pra frente" numa frase só: já atende, sem esperar um segundo "José"
+            if not self._atender_pedido(resto, texto):
                 self._novo_estado(self.TRANSICAO)
             return
 
         if self.state == self.OUVINDO:
-            if re.search(r"\bconversa", normalizado):
-                self._iniciar_conversa()
-                return
-            if re.search(r"\bhistori", normalizado):
-                self._iniciar_historias()
-                return
-            comando = identificar_comando(normalizado)
-            if comando:
-                self._executar_comando(*comando, texto)
+            self._atender_pedido(normalizado, texto)
             return
 
         if self.state == self.COMANDO:
