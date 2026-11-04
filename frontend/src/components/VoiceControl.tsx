@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mic, MicOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { identifyVoiceCommand, voiceCommandLabel, type VoiceCommandEvent, type VoiceCommandId } from '@/lib/voiceCommands';
+import { interpretVoice, voiceCommandLabel, type VoiceCommandEvent, type VoiceCommandId } from '@/lib/voiceCommands';
 
 interface VoiceControlProps {
   onVoiceCommand: (command: VoiceCommandId, text: string) => void;
@@ -15,6 +15,7 @@ const STATUS_TEXT: Record<string, string> = {
   ok: 'executado',
   no_robot: 'Arduino desconectado',
   not_implemented: 'ainda não implementado no robô',
+  duplicate: 'o outro reconhecedor (José) chegou primeiro',
   unknown: 'desconhecido pelo backend',
 };
 
@@ -28,14 +29,19 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>(0);
+  const listeningRef = useRef(false); // o reconhecimento reinicia sozinho enquanto estiver ligado
+  const onCommandRef = useRef(onVoiceCommand); // sempre a versão mais nova da função, sem recriar o reconhecimento
+  const firedRef = useRef<Set<number>>(new Set()); // resultados desta sessão que já viraram comando
+  const calledUntilRef = useRef(0); // depois de dizer só "José", por alguns segundos a palavra do comando basta
   const { toast } = useToast();
+  onCommandRef.current = onVoiceCommand;
 
+  // Reconhecimento nativo do Chrome, criado uma vez só. Fala o comando como "José, frente".
+  // O José (Vosk) ouve a mesma frase ao mesmo tempo: o backend executa o primeiro que chegar.
   useEffect(() => {
-    console.log('🎙️ Inicializando Web Speech API...');
-    
-    // Verificar se o navegador suporta Web Speech API
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      console.error('❌ Navegador não suporta Web Speech API');
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       toast({
         title: "Navegador não suportado",
         description: "Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.",
@@ -44,103 +50,70 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
       return;
     }
 
-    // @ts-ignore
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.interimResults = true; // age já no resultado parcial, sem esperar a frase terminar
     recognition.lang = 'pt-BR';
     recognition.maxAlternatives = 1;
 
-    console.log('✅ Web Speech API configurada:', {
-      continuous: recognition.continuous,
-      interimResults: recognition.interimResults,
-      lang: recognition.lang
-    });
-
-    recognition.onstart = () => {
-      console.log('🎤 Reconhecimento de voz INICIADO');
-    };
+    recognition.onstart = () => firedRef.current.clear();
 
     recognition.onresult = (event: any) => {
-      const current = event.resultIndex;
-      const transcript = event.results[current][0].transcript.toLowerCase().trim();
-      const confidence = event.results[current][0].confidence;
-      
-      console.log('📝 Transcrição:', transcript, '| Confiança:', confidence);
-      setTranscript(transcript);
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const text = String(result[0].transcript).trim();
+        setTranscript(text);
+        if (firedRef.current.has(i)) continue;
 
-      // Só processar comandos quando for resultado final
-      if (event.results[current].isFinal) {
-        console.log('✅ Resultado final:', transcript);
-        processCommand(transcript);
+        const heard = interpretVoice(text, Date.now() < calledUntilRef.current);
+        if (heard.command && heard.type === 'comando') {
+          // "para" só vale quando a frase termina: "para frente" começa igual a "para"
+          if (heard.command === 'parar' && !result.isFinal) continue;
+          firedRef.current.add(i);
+          calledUntilRef.current = 0;
+          const command = heard.command as VoiceCommandId;
+          onCommandRef.current(command, text);
+          setLastCommand(`${voiceCommandLabel(command)} (ouvido: "${text}")`);
+        } else if (heard.called && !heard.command && result.isFinal) {
+          calledUntilRef.current = Date.now() + 6000; // só "José": o próximo comando não precisa dele
+        }
       }
     };
 
     recognition.onerror = (event: any) => {
-      console.error('❌ Erro no reconhecimento de voz:', event.error);
-      if (event.error === 'no-speech') {
-        console.log('ℹ️ Nenhuma fala detectada (normal)');
-        return;
-      }
+      if (event.error === 'no-speech' || event.error === 'aborted') return; // normal
       if (event.error === 'not-allowed') {
         toast({
           title: "Permissão Negada",
           description: "Permita o acesso ao microfone nas configurações do navegador",
           variant: "destructive",
         });
+        listeningRef.current = false;
         setIsListening(false);
         return;
       }
-      toast({
-        title: "Erro no reconhecimento",
-        description: `Erro: ${event.error}`,
-        variant: "destructive",
-      });
+      toast({ title: "Erro no reconhecimento", description: `Erro: ${event.error}`, variant: "destructive" });
     };
 
     recognition.onend = () => {
-      console.log('⏹️ Reconhecimento de voz FINALIZADO');
-      // Reiniciar automaticamente se ainda estiver no modo listening
-      if (isListening) {
-        console.log('🔄 Reiniciando reconhecimento...');
+      // O Chrome encerra a sessão de tempos em tempos: reinicia enquanto o botão estiver ligado
+      if (!listeningRef.current) return;
+      setTimeout(() => {
         try {
-          recognition.start();
-        } catch (error) {
-          console.error('❌ Erro ao reiniciar:', error);
-          setIsListening(false);
+          if (listeningRef.current) recognition.start();
+        } catch {
+          // já iniciado
         }
-      }
+      }, 250);
     };
 
     recognitionRef.current = recognition;
-
     return () => {
-      console.log('🧹 Limpando reconhecimento de voz');
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
+      listeningRef.current = false;
+      recognition.onend = null;
+      recognition.stop();
     };
-  }, [isListening]);
-
-  const processCommand = (text: string) => {
-    console.log('🔍 Processando comando:', text);
-    const command = identifyVoiceCommand(text);
-    if (!command) {
-      console.log('❌ Comando não reconhecido:', text);
-      toast({
-        title: "❌ Comando não reconhecido",
-        description: `Você disse: "${text}"`,
-        variant: "destructive"
-      });
-      return;
-    }
-    console.log('✅ Comando reconhecido:', command);
-    // O backend executa e devolve {type: 'voice_command'}, que aparece em lastVoiceEvent
-    onVoiceCommand(command, text);
-    setLastCommand(`${voiceCommandLabel(command)} (reconhecido: "${text}")`);
-  };
+  }, []);
 
   const startAudioMonitoring = async () => {
     try {
@@ -209,6 +182,7 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
 
     if (isListening) {
       console.log('🛑 Desativando reconhecimento...');
+      listeningRef.current = false;
       recognitionRef.current?.stop();
       setIsListening(false);
       setTranscript('');
@@ -226,11 +200,12 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
         console.log('✅ Permissão concedida');
         
         console.log('▶️ Iniciando reconhecimento...');
+        listeningRef.current = true;
         recognitionRef.current?.start();
         setIsListening(true);
         toast({
           title: "Reconhecimento Ativado",
-          description: "🎤 Ex.: vai pra frente, meia volta, para, modo autônomo",
+          description: "🎤 Diga: José frente · José trás · José direita · José esquerda · José gira · pare",
         });
       } catch (error) {
         console.error('❌ Erro ao acessar microfone:', error);
@@ -303,7 +278,7 @@ const VoiceControl = ({ onVoiceCommand, lastVoiceEvent, isConnected }: VoiceCont
         )}
 
         <p className="text-xs text-muted-foreground">
-          "vai pra frente", "meia volta", "volta completa", <span className="font-semibold">"para"</span>, "modo autônomo"
+          "José, frente" · "José, trás" · "José, direita" · "José, esquerda" · "José, gira" · <span className="font-semibold">"pare"</span>
         </p>
       </CardContent>
     </Card>

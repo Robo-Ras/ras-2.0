@@ -1,0 +1,76 @@
+{
+  "_leia-me": "Dicionário dos comandos de voz do RAS. Lido pelo José (Python, voz/comandos.py) e pelo painel (Chrome, frontend/src/lib/voiceCommands.ts): editar aqui vale para os dois. Escreva as palavras como o reconhecedor costuma devolver, com ou sem acento (a comparação ignora acento e maiúscula). O formato de uso é 'José <comando>', ex.: 'José, frente'. 'pare'/'para' também valem sozinhos, para parar nunca depender de chamar o José.",
+
+  "chamar": ["josé", "jose", "joze", "jozé", "josi", "jone", "jome", "joseh", "zé"],
+
+  "ignorar": [
+    "vai", "vá", "va", "ir", "ande", "anda", "andar", "pra", "pro", "a", "à", "o", "um", "uma", "por", "favor",
+    "agora", "então", "entao", "pode", "aí", "ai", "e", "de", "do", "da", "na", "no", "em", "unk"
+  ],
+
+  "comandos": {
+    "frente": {
+      "rotulo": "Vai pra Frente",
+      "palavras": ["frente", "frenti", "frent", "frenta", "frentes", "fente", "fremte", "frentee", "prafrente", "avança", "avançar", "avance", "avante", "adiante"]
+    },
+    "tras": {
+      "rotulo": "Vai pra Trás",
+      "palavras": ["trás", "tras", "traz", "atrás", "atras", "trais", "traze", "trase", "pratras", "ré", "re", "recua", "recuar", "recue"]
+    },
+    "direita": {
+      "rotulo": "Vai pra Direita",
+      "palavras": ["direita", "direta", "dereita", "dirita", "direito", "diretas", "direitas"]
+    },
+    "esquerda": {
+      "rotulo": "Vai pra Esquerda",
+      "palavras": ["esquerda", "esqueda", "isquerda", "esquerta", "esqerda", "esquedra", "esquerdo"]
+    },
+    "gira": {
+      "rotulo": "Gira",
+      "palavras": ["gira", "girar", "gire", "giro", "jira", "guira", "gíra", "dira", "dirá", "roda", "rodar", "rode"]
+    },
+    "parar": {
+      "rotulo": "Parar",
+      "palavras": ["pare", "para", "parar", "paro", "pará", "stop", "estop", "chega"],
+      "_sozinha": "vale sem 'José' só se for a única palavra dita (o 'para' de frases comuns não pode parar o robô)",
+      "_ambiguas": ["para"]
+    }
+  },
+
+  "pedidos": {
+    "conversa": {"rotulo": "Conversa", "palavras": ["conversa", "conversar", "conversas"]},
+    "historia": {"rotulo": "História", "palavras": ["história", "historia", "histórias", "historias"]}
+  },
+
+  "gramatica_extra": ["próxima", "volta", "voltar", "obrigado", "obrigada", "história", "conversa"],
+
+  "exemplos": [
+    ["José, frente", "frente"],
+    ["josé frente", "frente"],
+    ["José, vai pra frente", "frente"],
+    ["José vai para frente", "frente"],
+    ["José, frenti", "frente"],
+    ["José, trás", "tras"],
+    ["José atrás", "tras"],
+    ["José, traze", "tras"],
+    ["José, direita", "direita"],
+    ["José, vira à direita", "direita"],
+    ["José, esquerda", "esquerda"],
+    ["José, esqueda", "esquerda"],
+    ["José, gira", "gira"],
+    ["José, dirá", "gira"],
+    ["José, pare", "parar"],
+    ["José, para", "parar"],
+    ["pare", "parar"],
+    ["para", "parar"],
+    ["jome frente", "frente"],
+    ["José, conversa", "conversa"],
+    ["José, história", "historia"],
+    ["frente", null],
+    ["tem uma pessoa na frente da porta", null],
+    ["vire na próxima direita", null],
+    ["eu vou para casa", null],
+    ["bom dia, tudo bem com você", null],
+    ["josé", null]
+  ]
+}

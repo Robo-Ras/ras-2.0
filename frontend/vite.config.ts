@@ -27,6 +27,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // comandos_voz.json (dicionário de voz) fica na raiz do projeto, fora desta pasta
+    fs: { allow: [".."] },
   },
   plugins: [
     react(),

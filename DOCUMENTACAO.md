@@ -200,6 +200,7 @@ ras-2.0/
 ├── DOCUMENTACAO.md             # este arquivo
 ├── arduino/
 │   └── arduino_robot_control.ino
+├── comandos_voz.json           # dicionário dos comandos de voz (palavras e variações), do José e do Chrome
 ├── voz/                        # assistente de voz José (veja voz/README.md)
 │   ├── jose.py                       # escuta, transcreve (faster-whisper), manda comandos ao backend e serve o rosto (8090)
 │   ├── web/index.html                # página do rosto
@@ -492,7 +493,7 @@ Tema claro ou escuro: na primeira visita segue o tema do sistema; o botão de so
 - **Controle manual**: direcional (WASD/setas, Q/E giro, espaço para) ou por motor.
 - **Modo autônomo**: switch, o que o robô está fazendo e a velocidade.
 - **Esconder sensores**: cada câmera e o LiDAR têm um interruptor; desligado, o card some (só da tela, o backend segue lendo). Salvo no navegador.
-- **Voz**: último comando de voz recebido (do José ou do navegador) e o microfone do navegador.
+- **Voz**: último comando de voz (do José ou do Chrome; `duplicate` = o outro reconhecedor chegou primeiro) e o botão do microfone do navegador. Dicionário em `comandos_voz.json`.
 - **Arduino**: conexão serial e o guia de diagnóstico.
 
 Se o backend cair, uma faixa amarela avisa e a página tenta reconectar a cada 3 s.

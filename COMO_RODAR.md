@@ -59,21 +59,23 @@ Sem o José: `./start.sh` (sem `--voz`).
 
 ## 4. Falando com o José
 
-1. Diga **"José"**: o rosto desliza e fica ouvindo.
-2. Diga o comando:
+Para andar o formato é **"José, \<comando\>"**, e não usa IA (só um dicionário de palavras):
 
 | Fala | O robô |
 |------|--------|
-| "Vai pra frente / trás / direita / esquerda" | Anda 1,5 s e para |
-| "Dê meia volta" / "Dê volta completa" | Gira no lugar |
-| **"Para"** / **"Pare"** | Para na hora (funciona sem chamar "José" de novo) |
-| "História" | Conta histórias ("próxima", "volta", "para") |
-| "Conversa" | Conversa livre com o Gemini ("voltar" sai). Precisa de internet e da `GEMINI_API_KEY` ([voz/README.md](voz/README.md)) |
-| "Obrigado" | "Ao seu dispor" e volta a esperar |
+| "José, **frente**" | Anda 1,5 s e para |
+| "José, **trás**" | Anda para trás 1,5 s |
+| "José, **direita**" / "José, **esquerda**" | Anda para o lado 1,5 s |
+| "José, **gira**" | Gira no lugar uma volta |
+| **"Pare"** / **"Para"** | Para na hora (vale sozinho, sem "José"; só se for a única palavra) |
+| "José, **história**" | Conta histórias ("próxima", "volta", "para") |
+| "José, **conversa**" | Conversa livre com o Gemini ("voltar" sai). Precisa de internet e da `GEMINI_API_KEY` ([voz/README.md](voz/README.md)) |
 
-"Me segue" e "Fica do meu lado" aparecem na tela, mas o robô ainda não faz nada com eles.
+- Se disser só **"José"**, o rosto desliza e a **próxima palavra** ("frente") já basta.
+- Se disser "frente" sem "José", aparece a dica **"Diga José antes do comando"** e o robô não se mexe.
+- O dicionário de palavras e variações está em [`comandos_voz.json`](comandos_voz.json): se um comando não for entendido, acrescente a palavra que apareceu na tela (canto superior esquerdo do rosto).
 
-O último comando recebido aparece no card **Controle por Voz** do painel. Lá também dá para falar pelo microfone do navegador (botão *Ativar Voz*, só no Chrome ou Edge).
+O painel também ouve: botão *Microfone do navegador* no card **Voz** (só no Chrome ou Edge, precisa de internet). Os dois reconhecedores ouvem ao mesmo tempo e **o primeiro que detectar executa** (o outro é ignorado por 1,5 s).
 
 ## 5. Controlar pelo celular
 

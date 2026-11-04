@@ -1,5 +1,6 @@
 # Assistente de voz José (python jose.py)
-faster-whisper>=1.1   # traz também o "av", usado para ler a duração dos mp3; 1.1+ tem o large-v3-turbo
+faster-whisper>=1.1   # só na conversa; traz também o "av", usado para ler a duração dos mp3
+vosk              # reconhece os comandos de movimento (lista fechada de palavras, offline, ~50 ms)
 sounddevice      # precisa da PortAudio do sistema: sudo apt install libportaudio2
 numpy
 pygame

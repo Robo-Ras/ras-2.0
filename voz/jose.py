@@ -1,7 +1,6 @@
 # pip install -r requirements.txt
 import argparse
 import collections
-import difflib
 import asyncio
 import glob
 import io
@@ -11,11 +10,14 @@ import queue
 import random
 import re
 import signal
+import sys
 import tempfile
 import threading
 import time
 import unicodedata
+import urllib.request
 import wave
+import zipfile
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Literal
@@ -27,10 +29,12 @@ import edge_tts
 import numpy as np
 import pygame
 import sounddevice as sd
+import comandos
 from faster_whisper import WhisperModel
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+from vosk import KaldiRecognizer, Model as VoskModel, SetLogLevel
 from websockets.sync.client import connect as ws_connect
 
 
@@ -52,18 +56,22 @@ def carregar_env():
 carregar_env()  # antes das constantes abaixo, que leem JOSE_* e GEMINI_*
 
 SAMPLE_RATE = 16000
-CHUNK_SECONDS = 1.5
-# O Whisper gasta o mesmo tempo (~3 s o "small", ~1 s o "base" neste notebook) para 1 s ou 30 s de áudio.
-# Por isso o José não transcreve em blocos fixos: espera a frase acabar e transcreve uma vez só.
-MODEL_SIZE = os.environ.get("JOSE_MODELO", "base")  # comandos e "José"; "small" é mais preciso e ~3x mais lento
 LANGUAGE = "pt"
 # Threads = núcleos físicos (o i5 do robô tem 4 núcleos / 8 threads; usar 8 deixa tudo mais lento)
 CPU_THREADS = int(os.environ.get("JOSE_THREADS", 0)) or max(2, (os.cpu_count() or 8) // 2)
-# temperature=0: sem tentar de novo em temperaturas maiores (triplicava o tempo); sem contexto da frase anterior
-TRANSCRICAO = dict(language=LANGUAGE, beam_size=1, temperature=0.0, condition_on_previous_text=False, vad_filter=True)
-# Limite de tokens: sem as tentativas repetidas, o modelo leve às vezes entra num laço ("me-cô-me-cô-...")
-TRANSCRICAO_COMANDO = dict(TRANSCRICAO, max_new_tokens=48)  # comando é frase curta
-TRANSCRICAO_CONVERSA = dict(TRANSCRICAO, max_new_tokens=200)
+
+# Comandos de movimento ("José, frente") NÃO usam IA: o Vosk reconhece só as palavras do dicionário
+# (comandos_voz.json), rodando enquanto a pessoa fala (~50 ms). O Whisper só entra na conversa.
+PASTA_MODELOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelos")
+VOSK_MODELO = os.environ.get("JOSE_VOSK_MODELO", "vosk-model-small-pt-0.3")
+VOSK_URL = f"https://alphacephei.com/vosk/models/{VOSK_MODELO}.zip"
+ESTAVEL_PARCIAL = 2  # leituras de 0,1 s iguais antes de agir numa frase ainda não terminada ("José frente")
+
+# Whisper (só na conversa): temperature=0 (sem tentar de novo em temperaturas maiores, que triplicava o tempo),
+# sem contexto da frase anterior e com limite de tokens (o modelo leve às vezes entra num laço de repetição)
+TRANSCRICAO_CONVERSA = dict(
+    language=LANGUAGE, beam_size=1, temperature=0.0, condition_on_previous_text=False, vad_filter=True, max_new_tokens=200
+)
 
 # Modo conversa: o Gemini já recebe o áudio, então a transcrição local é só uma dica e para achar
 # "voltar"/"história"/comandos. "small" basta (o large-v3-turbo levava dezenas de segundos na CPU)
@@ -72,13 +80,7 @@ BLOCO_VAD_S = 0.1
 SILENCIO_FIM_FALA_S = 1.0  # conversa: espera mais, a pessoa pensa entre as palavras
 FALA_MIN_S = 0.4  # mais curto que isso é estalo/ruído
 MAX_FALA_S = 30
-# Exige dizer "José" antes de um comando. Com JOSE_EXIGE_CHAMAR=0 no voz/.env, "frente" já basta (cuidado em
-# lugar com gente falando: "frente", "direita" e "esquerda" são palavras comuns)
-EXIGE_CHAMAR = os.environ.get("JOSE_EXIGE_CHAMAR", "1") != "0"
 DICA_S = 4  # quanto tempo a dica "diga José" fica na tela
-SILENCIO_FIM_COMANDO_S = 0.6  # comandos são frases curtas: responde mais rápido
-FALA_MIN_COMANDO_S = 0.3
-MAX_COMANDO_S = 6
 ENERGIA_MIN_VOZ = 0.01  # RMS do áudio float32; abaixo disso nunca é fala
 FATOR_VOZ = 3.0  # fala = energia acima de 3x o ruído de fundo
 JANELA_RUIDO_BLOCOS = 30  # o "ruído de fundo" é o percentil 20 dos últimos ~3 s (se adapta a lugar barulhento)
@@ -111,9 +113,7 @@ DURACAO_MOVIMENTO_S = 0.3  # o rosto desliza ao ouvir "José"; a animação em s
 DURACAO_AGRADECIMENTO_S = 3
 INTERVALO_LOOP_S = 0.05
 
-DIRECOES = {"frente": "Frente", "tras": "Trás", "direita": "Direita", "esquerda": "Esquerda"}
-LADOS = {"direito": "Direito", "esquerdo": "Esquerdo"}
-# "para" só vale no fim da frase ("Para!"), para não disparar com "vai para a frente" ou "voltou para casa"
+# Só para os modos história/comando: "para" só vale no fim da frase, para não disparar com "voltou para casa"
 RE_PARAR = r"\b(parar|pare)\b|\bpara\b\s*(?:[.!?,]|$)"
 
 # Backend do RAS (backend/robot_autonomous_control.py); recebe os comandos como {"type": "voice_command"}
@@ -129,52 +129,24 @@ def normalizar(texto: str) -> str:
     return "".join(c for c in texto if not unicodedata.combining(c))
 
 
-def apos_chamar_jose(texto_normalizado: str):
-    """Texto depois do "José" se a frase chama o José, senão None.
-
-    Aceita erros comuns do reconhecimento ("jone", "jome", "joze"): palavra parecida com "jose".
-    Chamar sem querer só troca o rosto; o robô só anda com um comando reconhecido depois.
-    """
-    palavras = texto_normalizado.split()
-    for i, palavra in enumerate(palavras):
-        palavra = palavra.strip(".,!?;:")
-        if palavra == "jose" or difflib.SequenceMatcher(None, palavra, "jose").ratio() >= 0.75:
-            return " ".join(palavras[i + 1:])
-    return None
-
-
-# Palavra-chave de cada direção: o que vale é a palavra ("frente"), não a frase ("vai pra frente").
-# Se a frase tiver mais de uma, vale a primeira que aparecer.
-PALAVRAS_DIRECAO = [
-    (r"\b(frente|avanc\w*)\b", "frente"),
-    (r"\b(a?tras|re|recu\w*)\b", "tras"),  # "trás", "atrás", "ré", "recua"
-    (r"\bdireita\b", "direita"),
-    (r"\besquerda\b", "esquerda"),
-]
-
-
-def identificar_comando(texto_normalizado: str):
-    """Devolve (texto mostrado na tela, id do comando enviado ao backend) ou None.
-
-    Procura palavras-chave: "frente" já basta, não precisa dizer "vai pra frente".
-    """
-    if re.search(RE_PARAR, texto_normalizado):  # parar sempre tem prioridade
-        return "Parar", "parar"
-    if re.search(r"\bmeia volta\b", texto_normalizado):
-        return "Dê Meia Volta", "meia_volta"
-    if re.search(r"\bvolta completa\b", texto_normalizado):
-        return "Dê Volta Completa", "volta_completa"
-    if re.search(r"\bsegue\b", texto_normalizado):
-        return "Me Segue", "me_segue"
-    m = re.search(r"\blado\b.*\b(direit[oa]|esquerd[oa])\b", texto_normalizado)
-    if m:
-        lado = "direito" if m.group(1).startswith("direit") else "esquerdo"
-        return f"Fica do Meu Lado {LADOS[lado]}", f"lado_{lado}"
-    achados = [(m.start(), comando) for regex, comando in PALAVRAS_DIRECAO if (m := re.search(regex, texto_normalizado))]
-    if achados:
-        comando = min(achados)[1]
-        return f"Vai pra {DIRECOES[comando]}", comando
-    return None
+def carregar_vosk():
+    """Carrega o modelo do Vosk (~50 MB); baixa sozinho na primeira vez."""
+    caminho = os.path.join(PASTA_MODELOS, VOSK_MODELO)
+    if not os.path.isdir(caminho):
+        print(f"⏳ Baixando o modelo do Vosk ({VOSK_MODELO}, ~50 MB)...")
+        os.makedirs(PASTA_MODELOS, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmp:  # pasta própria: o zip baixado é dado não confiável
+            zip_path = os.path.join(tmp, "modelo.zip")
+            urllib.request.urlretrieve(VOSK_URL, zip_path)
+            with zipfile.ZipFile(zip_path) as z:
+                for nome in z.namelist():
+                    if nome.startswith(("/", "..")) or ".." in nome.split("/"):
+                        raise RuntimeError(f"Arquivo suspeito no modelo baixado: {nome}")
+                z.extractall(os.path.join(tmp, "x"))
+            os.replace(os.path.join(tmp, "x", VOSK_MODELO), caminho)
+        print("✓ Modelo do Vosk instalado")
+    SetLogLevel(-1)
+    return VoskModel(caminho)
 
 
 class ConexaoBackend:
@@ -240,16 +212,17 @@ class ConexaoBackend:
 
 
 class OuvinteDeAudio:
-    """Grava o microfone e publica o texto numa fila: em blocos curtos (comandos) ou a frase inteira (conversa)."""
+    """Grava o microfone e publica o texto numa fila: palavras do dicionário pelo Vosk (comandos) ou a frase inteira pelo Whisper (conversa)."""
 
     COMANDOS, CONVERSA = "comandos", "conversa"
 
-    def __init__(self, model, sample_rate=SAMPLE_RATE, chunk_seconds=CHUNK_SECONDS):
-        self.model = model
+    def __init__(self, vosk_modelo=None, sample_rate=SAMPLE_RATE):
+        self.vosk_modelo = vosk_modelo
+        self.criar_reconhecedor = self._criar_reconhecedor_vosk  # troca-se nos testes
+        self._gramatica = None
         self.modelo_conversa = None
         self.modo = self.COMANDOS
         self.sample_rate = sample_rate
-        self.chunk_seconds = chunk_seconds
         # Itens: (texto, segundos processando, segundos de áudio, áudio da fala ou None)
         self.text_queue = queue.Queue()
         self.transcrevendo_fala = threading.Event()
@@ -319,14 +292,74 @@ class OuvinteDeAudio:
             self._stream.stop()
             self._stream.close()
 
+    def _criar_reconhecedor_vosk(self):
+        if self._gramatica is None:
+            self._gramatica = self._gramatica_do_modelo()
+        return KaldiRecognizer(self.vosk_modelo, self.sample_rate, self._gramatica)
+
+    def _gramatica_do_modelo(self) -> str:
+        """Lista de palavras do dicionário que o modelo conhece.
+
+        O Vosk imprime um aviso (no stderr do C++) para cada palavra que ele não conhece, a cada vez que o
+        reconhecedor é criado. Aqui descobrimos essas palavras uma vez só e tiramos da lista.
+        """
+        lista = comandos.DICIONARIO.gramatica()
+        with tempfile.TemporaryFile() as captura:
+            sys.stderr.flush()
+            original = os.dup(2)
+            os.dup2(captura.fileno(), 2)
+            try:
+                SetLogLevel(0)
+                KaldiRecognizer(self.vosk_modelo, self.sample_rate, json.dumps(lista, ensure_ascii=False))
+            finally:
+                SetLogLevel(-1)
+                os.dup2(original, 2)
+                os.close(original)
+            captura.seek(0)
+            log = captura.read().decode("utf-8", errors="replace")
+        ausentes = set(re.findall(r"missing in vocabulary: '([^']+)'", log))
+        return json.dumps([p for p in lista if p not in ausentes], ensure_ascii=False)
+
     def _process_loop(self):
         while self._running.is_set():
             if self.modo == self.CONVERSA:
                 self._ouvir_fala(self.CONVERSA, SILENCIO_FIM_FALA_S, FALA_MIN_S, MAX_FALA_S, self._transcrever_fala)
             else:
-                self._ouvir_fala(
-                    self.COMANDOS, SILENCIO_FIM_COMANDO_S, FALA_MIN_COMANDO_S, MAX_COMANDO_S, self._transcrever_comando
-                )
+                self._ouvir_comandos()
+
+    def _ouvir_comandos(self):
+        """Modo normal: o Vosk reconhece só as palavras do dicionário enquanto a pessoa fala."""
+        reconhecedor = self.criar_reconhecedor()
+        geracao = self._geracao
+        parcial_anterior, estavel = "", 0
+        while self._running.is_set() and self.modo == self.COMANDOS:
+            time.sleep(BLOCO_VAD_S)
+            bloco, geracao_atual = self._pegar_audio()
+            if geracao_atual != geracao:
+                reconhecedor = self.criar_reconhecedor()  # pausa/retomada: começa limpo
+                geracao, parcial_anterior, estavel = geracao_atual, "", 0
+            if bloco is None:
+                continue
+            inicio = time.time()
+            pcm = (np.clip(bloco, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+            texto = ""
+            if reconhecedor.AcceptWaveform(pcm):  # fim de frase
+                texto = json.loads(reconhecedor.Result()).get("text", "")
+                parcial_anterior, estavel = "", 0
+            else:
+                parcial = json.loads(reconhecedor.PartialResult()).get("partial", "")
+                estavel = estavel + 1 if parcial and parcial == parcial_anterior else 0
+                parcial_anterior = parcial
+                # Já dá para agir antes de a frase acabar: "José frente" estável por 0,2 s. "Pare" espera o fim
+                # da frase, porque "para frente" começa igual a "para".
+                if estavel >= ESTAVEL_PARCIAL:
+                    pedido = comandos.interpretar(parcial)
+                    if pedido.chamou and pedido.comando and pedido.comando != "parar":
+                        texto = parcial
+                        reconhecedor.Reset()
+                        parcial_anterior, estavel = "", 0
+            if texto.replace("[unk]", "").strip():
+                self._publicar(geracao, texto, time.time() - inicio, bloco.size / self.sample_rate)
 
     def _ouvir_fala(self, modo, silencio_fim_s, fala_min_s, max_fala_s, transcrever):
         """Junta o áudio de uma frase (até `silencio_fim_s` de silêncio, pela energia do som) e transcreve tudo de uma vez."""
@@ -360,18 +393,6 @@ class OuvinteDeAudio:
                     transcrever(np.concatenate(fala))
                     return
                 fala, silencio = [], 0.0
-
-    def _transcrever_comando(self, audio):
-        """Frase curta do modo normal ("José", "vai pra frente"): não pausa o microfone."""
-        geracao = self._geracao
-        inicio_processamento = time.time()
-        try:
-            segments, _ = self.model.transcribe(audio, **TRANSCRICAO_COMANDO)
-            texto = "".join(segment.text for segment in segments).strip()
-        except Exception as e:
-            print(f"⚠ Erro ao transcrever: {e}")
-            texto = ""
-        self._publicar(geracao, texto, time.time() - inicio_processamento, audio.size / self.sample_rate)
 
     def _transcrever_fala(self, audio):
         self.pausar()  # José não escuta enquanto pensa e responde
@@ -736,9 +757,9 @@ class AssistenteApp:
             self.ouvinte.retomar(OuvinteDeAudio.COMANDOS)
             self._iniciar_historias()
             return
-        comando = identificar_comando(normalizado)
-        if comando:
-            self._executar_comando(*comando, texto)
+        pedido = comandos.interpretar(texto)  # na conversa, andar exige "José": "vou para a frente" é só papo
+        if pedido.comando and pedido.tipo == "comando":
+            self._executar_comando(comandos.DICIONARIO.rotulos[pedido.comando], pedido.comando, texto)
             return
         self._novo_estado(self.PENSANDO)
         threading.Thread(target=self._responder, args=(texto, audio, list(self.historico)), daemon=True).start()
@@ -760,19 +781,15 @@ class AssistenteApp:
 
     # ---- Texto reconhecido ----
 
-    def _atender_pedido(self, normalizado: str, texto: str) -> bool:
-        """Conversa, história ou comando de movimento. Devolve False se a frase não pediu nada disso."""
-        if re.search(r"\bconversa", normalizado):
-            self._iniciar_conversa()
-            return True
-        if re.search(r"\bhistori", normalizado):
-            self._iniciar_historias()
-            return True
-        comando = identificar_comando(normalizado)
-        if comando:
-            self._executar_comando(*comando, texto)
-            return True
-        return False
+    def _atender(self, pedido, texto: str):
+        """Executa o que o dicionário reconheceu: pedido do próprio José (conversa, história) ou comando do robô."""
+        if pedido.tipo == "pedido":
+            if pedido.comando == "conversa":
+                self._iniciar_conversa()
+            else:
+                self._iniciar_historias()
+            return
+        self._executar_comando(comandos.DICIONARIO.rotulos[pedido.comando], pedido.comando, texto)
 
     def _processar_texto(self, texto: str, audio=None):
         if texto:
@@ -790,22 +807,20 @@ class AssistenteApp:
         normalizado = normalizar(texto)
 
         if self.state == self.ACORDADO:
-            resto = apos_chamar_jose(normalizado)
-            if resto is None:
-                comando = identificar_comando(normalizado)
-                if comando and not EXIGE_CHAMAR:
-                    self._executar_comando(*comando, texto)
-                elif comando:
-                    # Ouviu um comando, mas ninguém chamou o José: avisa na tela em vez de ignorar em silêncio
-                    self._dica_ate = time.monotonic() + DICA_S
-                return
-            # "José, vai pra frente" numa frase só: já atende, sem esperar um segundo "José"
-            if not self._atender_pedido(resto, texto):
-                self._novo_estado(self.TRANSICAO)
+            pedido = comandos.interpretar(texto)  # "José, frente" numa frase só; "pare" vale sozinho
+            if pedido.comando:
+                self._atender(pedido, texto)
+            elif pedido.chamou:
+                self._novo_estado(self.TRANSICAO)  # só "José": o rosto desliza e fica ouvindo
+            elif pedido.sem_chamar:
+                # Ouviu uma palavra de comando, mas ninguém chamou o José: avisa na tela em vez de ignorar
+                self._dica_ate = time.monotonic() + DICA_S
             return
 
         if self.state == self.OUVINDO:
-            self._atender_pedido(normalizado, texto)
+            pedido = comandos.interpretar(texto, chamado=True)  # já chamou: a palavra do comando basta
+            if pedido.comando:
+                self._atender(pedido, texto)
             return
 
         if self.state == self.COMANDO:
@@ -870,9 +885,8 @@ def main():
     args = parser.parse_args()
 
     backend = None if args.sem_robo else ConexaoBackend(args.backend)
-    print(f"⏳ Carregando o modelo de fala ({MODEL_SIZE})...")
-    model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8", cpu_threads=CPU_THREADS)
-    ouvinte = OuvinteDeAudio(model)
+    print("⏳ Carregando o reconhecedor de comandos (Vosk)...")
+    ouvinte = OuvinteDeAudio(carregar_vosk())
     app = AssistenteApp(ouvinte, backend)
 
     servidor = criar_servidor_web(app, args.host, args.porta)

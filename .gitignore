@@ -11,3 +11,6 @@ __pycache__/
 
 # Histórias do José (~260 MB): baixe de https://github.com/KimberlyRotman/RAS-CommandPerVoice/tree/main/historinhas
 voz/historinhas/*.mp3
+
+# Modelo do Vosk (~50 MB, baixado sozinho na primeira vez)
+voz/modelos/

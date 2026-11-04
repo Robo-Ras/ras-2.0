@@ -2,7 +2,7 @@
 
 Assistente de voz do RAS, trazido de [KimberlyRotman/RAS-CommandPerVoice](https://github.com/KimberlyRotman/RAS-CommandPerVoice) (autora: Kimberly Rotman, commit `3147c11`).
 
-O José escuta o microfone o tempo todo, transcreve offline com [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (português) e reage com um rosto. No RAS 2.0:
+O José escuta o microfone o tempo todo e reage com um rosto. **Para mover o robô não há IA**: um reconhecedor offline ([Vosk](https://alphacephei.com/vosk/)) só procura as palavras de um dicionário. A IA (Whisper e Gemini) fica só na **conversa**. No RAS 2.0:
 
 - o rosto é uma **página web própria em http://localhost:8090** (antes era uma janela tkinter), separada do painel do robô (8080);
 - ele **manda os comandos para o backend**, que move o robô e avisa o painel.
@@ -14,7 +14,7 @@ sudo apt install libportaudio2
 ~/L515/bin/pip install -r ~/ras-2.0/voz/requirements.txt     # mesmo venv do backend
 ```
 
-Na primeira execução o faster-whisper baixa o modelo `base` (~150 MB), usado para "José" e os comandos. Na primeira vez que entrar no modo conversa, baixa também o `small` (~500 MB).
+Na primeira execução o José baixa sozinho o modelo do Vosk (`vosk-model-small-pt-0.3`, ~50 MB, para `voz/modelos/`, fora do git). Só na primeira vez que entrar no modo conversa ele baixa também o `small` do Whisper (~500 MB).
 
 ### Chave do Gemini (modo conversa)
 
@@ -56,46 +56,48 @@ O áudio das histórias toca no computador onde o `jose.py` roda, não no navega
 
 O endereço do backend também pode vir de `RAS_WS_URL`. Se o backend não estiver no ar, o José continua funcionando e tenta reconectar a cada 3 s (comandos falados nesse meio-tempo são descartados, para o robô não sair andando depois).
 
-## Velocidade (por que o José responde rápido)
+## Como o robô entende (sem IA)
 
-O Whisper gasta o **mesmo tempo para 1 s ou 30 s de áudio** (neste i5: ~3 s o `small`, ~1 s o `base`). Por isso o José **não** transcreve blocos fixos de 1,5 s o tempo todo: ele espera a frase acabar (0,6 s de silêncio nos comandos, 1 s na conversa) e transcreve **uma vez só**, sem tentativas repetidas. No silêncio ele quase não usa CPU. Dá para dizer **"José, vai pra frente"** numa frase só.
+O formato é **"José, \<comando\>"**. Os comandos são só estes:
 
-| Variável | Padrão | Para quê |
-|----------|--------|----------|
-| `JOSE_MODELO` | `base` | Modelo de "José" e comandos. `small` é mais preciso e ~3x mais lento; `tiny` é ainda mais rápido e erra mais |
-| `JOSE_THREADS` | metade das threads (4 no i5) | Usar todas as 8 threads deixa mais lento (são só 4 núcleos físicos) |
+| Fala | id enviado | No robô |
+|------|-----------|---------|
+| "José, **frente**" | `frente` | Anda 1,5 s e para |
+| "José, **trás**" | `tras` | Anda 1,5 s e para |
+| "José, **direita**" | `direita` | Anda 1,5 s e para |
+| "José, **esquerda**" | `esquerda` | Anda 1,5 s e para |
+| "José, **gira**" | `gira` | Gira no lugar uma volta (4 s) |
+| "**Pare**" / "**Para**" | `parar` | Para na hora e desliga o modo autônomo |
 
-O limite de "o que é fala" se adapta ao ruído do ambiente (em lugar barulhento, os primeiros ~3 s servem para aprender o ruído).
+- **Dicionário:** as palavras e as **variações** ("frenti", "dirá", "traze", "atrás", "recua"...) ficam em [`comandos_voz.json`](../comandos_voz.json), na raiz do projeto. Se um reconhecedor escrever uma palavra de um jeito que ainda não está lá, é só **acrescentar na lista** (acento e maiúscula não importam; palavras parecidas com 5+ letras também são aceitas). O mesmo arquivo vale para o José e para o Chrome, e o campo `exemplos` do arquivo é conferido pelos testes nos dois.
+- **"José" é obrigatório para andar**, na mesma frase ("José, vai pra frente" também vale). Frases do dia a dia ("tem uma pessoa na frente da porta") não mexem no robô. Se ele ouve "frente" sem "José", mostra a dica **"Diga José antes do comando"**. Depois de dizer só "José", o rosto desliza e a **próxima palavra de comando já basta**.
+- **"Pare" e "para" valem sozinhos** (parar não pode depender de chamar), mas só se forem a **única** palavra dita: o "para" de "eu vou para casa" não para o robô, e "José, vai para frente" anda.
+- **Dois reconhecedores, o primeiro executa:** o Vosk (no José) e o reconhecimento nativo do **Chrome** (card Voz do painel, botão *Microfone do navegador*) ouvem ao mesmo tempo. O backend executa o primeiro comando que chegar e **ignora o outro por 1,5 s** (`status: duplicate`); "parar" nunca é ignorado. O Chrome precisa de internet e de permissão do microfone.
+- **Velocidade:** o Vosk reconhece enquanto você fala (~50 ms) e o José age quando a frase "se firma", em média **no instante em que você termina de falar**.
 
 ## Fluxo
 
 1. **Acordado** — mostra `joseacordado.png`.
-2. **Ouvindo** — ao ouvir **"José"**, o rosto desliza para a esquerda e troca para `joseouvindo.png`.
+2. **Ouvindo** — ao ouvir só **"José"**, o rosto desliza para a esquerda e troca para `joseouvindo.png`.
 3. **Comando** — com o backend no ar, mostra `Josefechado.png` com o comando, **para de escutar** até o robô terminar o movimento e volta direto a ouvir (sem precisar dizer "José"). Sem backend, mostra o comando e espera "obrigado", como antes.
 4. **Obrigado/Obrigada** — (só sem backend) mostra "Ao seu dispor" por 3 s e volta ao rosto acordado.
 
-Sem backend, enquanto um comando está na tela, dizer **"para"/"pare"** para o robô sem precisar chamar "José" de novo. Com o backend, os movimentos duram no máximo 4 s e param sozinhos; para parar antes use o painel (espaço).
-
-## Comandos e o que o robô faz
-
-| Fala | id enviado | No robô |
-|------|-----------|---------|
-| "Vai pra frente / trás / direita / esquerda" | `frente`, `tras`, `direita`, `esquerda` | Anda 1,5 s e para |
-| "Dê meia volta" | `meia_volta` | Gira no lugar 2 s |
-| "Dê volta completa" | `volta_completa` | Gira no lugar 4 s |
-| "Para" / "Pare" / "Parar" | `parar` | Para na hora e desliga o modo autônomo |
-| "Me segue" | `me_segue` | Ainda não implementado (só aparece no painel) |
-| "Fica do meu lado direito / esquerdo" | `lado_direito`, `lado_esquerdo` | Ainda não implementado |
+Os movimentos duram no máximo 4 s e param sozinhos; para parar antes diga "pare" ou use o painel (espaço).
 
 Os tempos e a velocidade ficam em `VOICE_MOVES` e `VOICE_SPEED` em `backend/robot_autonomous_control.py`. Os tempos de giro são estimativas: **calibre no robô real**.
 
 Mensagem enviada pelo WebSocket:
 
 ```json
-{"type": "voice_command", "command": "frente", "text": "José, vai pra frente", "source": "jose"}
+{"type": "voice_command", "command": "frente", "text": "josé frente", "source": "jose"}
 ```
 
-O backend responde a todos os clientes com o mesmo `type`, mais `status` (`ok`, `no_robot`, `not_implemented`, `unknown`) e `running` (`true` se um movimento começou). Quando o movimento termina (ou é interrompido) ele manda `{"type": "voice_command_done", "command": "frente"}`; é isso que o José espera para voltar a ouvir. O card **Controle por Voz** do painel mostra o último comando recebido, venha ele do José ou do microfone do navegador; os dois usam o mesmo vocabulário (`frontend/src/lib/voiceCommands.ts`).
+O backend responde a todos os clientes com o mesmo `type`, mais `status` (`ok`, `no_robot`, `not_implemented`, `duplicate`, `unknown`) e `running` (`true` se um movimento começou). Quando o movimento termina (ou é interrompido) ele manda `{"type": "voice_command_done", "command": "frente"}`; é isso que o José espera para voltar a ouvir. O card **Voz** do painel mostra o último comando recebido, venha ele do José ou do Chrome.
+
+| Variável | Padrão | Para quê |
+|----------|--------|----------|
+| `JOSE_VOSK_MODELO` | `vosk-model-small-pt-0.3` | Modelo do Vosk (pasta em `voz/modelos/`) |
+| `JOSE_THREADS` | metade das threads (4 no i5) | Threads do Whisper da conversa |
 
 ## Modo conversa
 
@@ -110,7 +112,7 @@ Diga **"Conversa"** enquanto o José está ouvindo.
 
 - O Gemini recebe o áudio e a transcrição. Pelo tom de voz ele identifica a emoção; se não for neutra, a resposta começa com "Notei que você parece um pouco triste/feliz/...".
 - Ele lembra as últimas perguntas enquanto a conversa durar; **"Voltar"** apaga a memória e volta ao menu (ouvindo comandos, sem precisar dizer "José").
-- **"História"** e os comandos de movimento também funcionam na conversa; depois do movimento ele volta a conversar.
+- **"História"** e os comandos de movimento também funcionam na conversa (para andar, com o "José": "José, frente"); depois do movimento ele volta a conversar.
 - Configurável por variáveis de ambiente (ou no `voz/.env`): `GEMINI_API_KEY`, `JOSE_GEMINI_MODELO` (padrão `gemini-3.1-flash-lite`: responde em ~1 a 2 s; o `gemini-3.8-flash` estava sobrecarregado, com erro 503), `JOSE_VOZ` (padrão `pt-BR-AntonioNeural`), `JOSE_MODELO_CONVERSA` (padrão `small`; o `large-v3-turbo` é mais preciso, mas levava dezenas de segundos neste notebook, e o Gemini já ouve o áudio). Se o Gemini não responder em 15 s, o José avisa em vez de ficar mudo.
 - A detecção de fim de fala usa o volume do microfone (`ENERGIA_MIN_VOZ`, `FATOR_VOZ` em `jose.py`). Em lugar muito barulhento ajuste esses valores.
 

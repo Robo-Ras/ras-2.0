@@ -41,7 +41,11 @@ VOICE_MOVES = {
     'esquerda': ('left', 1.5),
     'meia_volta': ('rotate_right', 2.0),
     'volta_completa': ('rotate_right', 4.0),
+    'gira': ('rotate_right', 4.0),  # "José, gira": uma volta no lugar (calibre no robô real)
 }
+# Dois reconhecedores ouvem a mesma frase (Vosk no José e o Chrome do painel): vale o primeiro que chegar,
+# o outro, dentro desta janela, é ignorado (senão o robô andaria duas vezes). 'parar' nunca é ignorado.
+VOICE_DEDUP_S = 1.5
 # O que o modo "leve" (celular) não recebe do sensor_data: imagens e nuvem de pontos
 LITE_DROPPED_KEYS = ('camera_image', 'realsense_image', 'lidar_scan')
 
@@ -618,6 +622,7 @@ class WebSocketServer:
         self.last_move_time = 0  # Para detectar timeout de movimento manual
         self.last_navigation = None
         self.voice_task = None  # movimento curto disparado por comando de voz
+        self.voice_last_move = -1e9  # quando o último comando de voz de movimento foi aceito
         self.hold_deadline = None  # movimento "segurando" (celular): para se o comando não for renovado
 
     async def register(self, websocket):
@@ -784,10 +789,17 @@ class WebSocketServer:
     async def handle_voice_command(self, command, text, source):
         """Executa um comando de voz e avisa todas as interfaces"""
         print(f"🎙️ COMANDO DE VOZ ({source}): {command} | \"{text}\"")
+        now = asyncio.get_running_loop().time()
+        if command in VOICE_MOVES and now - self.voice_last_move < VOICE_DEDUP_S:
+            print(f"   ↳ ignorado: outro reconhecedor já mandou esse comando há {now - self.voice_last_move:.1f}s")
+            await self.send_to_all({'type': 'voice_command', 'command': command, 'text': text,
+                                    'source': source, 'status': 'duplicate', 'running': False})
+            return
         self.cancel_voice_move()
         status = 'ok'
 
         if command == 'parar':
+            self.voice_last_move = -1e9  # depois de parar, um novo comando é aceito na hora
             self.autonomous_mode = False
             self.robot.move('stop', 0)
             self.robot_moving = False
@@ -801,6 +813,7 @@ class WebSocketServer:
                 self.autonomous_mode = False
                 await self.send_to_all({'type': 'autonomous_status', 'enabled': False})
                 direction, seconds = VOICE_MOVES[command]
+                self.voice_last_move = now
                 self.voice_task = asyncio.create_task(self._voice_move(command, direction, seconds))
         elif command in VOICE_PENDING:
             status = 'not_implemented'

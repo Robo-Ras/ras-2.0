@@ -177,6 +177,50 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(key, data_lite)
             self.assertIn('sensors_status', data_lite)
 
+    async def test_voice_first_recognizer_wins(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='voice_command', command='frente', text='José frente', source='jose')
+            first = await c.wait_for('voice_command')
+            self.assertEqual((first['status'], first['running']), ('ok', True))
+            await c.wait_for('sensor_data', lambda m: m['robot_moving'])
+            # o Chrome ouviu a mesma frase um instante depois: ignorado, e o movimento em curso NÃO é cancelado
+            await c.send(type='voice_command', command='frente', text='josé frente', source='browser')
+            second = await c.wait_for('voice_command', lambda m: m['source'] == 'browser')
+            self.assertEqual((second['status'], second['running']), ('duplicate', False))
+            await asyncio.sleep(0.3)
+            self.assertNotEqual(self.world.wheels, (0, 0, 0))
+            done = await c.wait_for('voice_command_done')
+            self.assertEqual(done['command'], 'frente')
+
+    async def test_voice_stop_is_never_a_duplicate_and_reopens_the_window(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.send(type='voice_command', command='frente', text='josé frente', source='jose')
+            await c.wait_for('voice_command')
+            await c.send(type='voice_command', command='parar', text='pare', source='browser')
+            stop = await c.wait_for('voice_command', lambda m: m['command'] == 'parar')
+            self.assertEqual(stop['status'], 'ok')
+            await asyncio.sleep(0.2)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+            await c.send(type='voice_command', command='esquerda', text='josé esquerda', source='jose')
+            nxt = await c.wait_for('voice_command', lambda m: m['command'] == 'esquerda')
+            self.assertEqual(nxt['status'], 'ok')  # logo após parar, comando novo vale
+
+    async def test_voice_gira_spins_in_place(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            _, _, theta0 = self.world.pose()
+            await c.send(type='voice_command', command='gira', text='josé gira', source='jose')
+            ack = await c.wait_for('voice_command')
+            self.assertEqual((ack['status'], ack['running']), ('ok', True))
+            await asyncio.sleep(1.0)
+            x, y, theta = self.world.pose()
+            self.assertNotAlmostEqual(math.remainder(theta - theta0, 2 * math.pi), 0.0, places=1)
+            await c.send(type='voice_command', command='parar', text='pare')
+
     async def test_voice_command_moves_then_stops(self):
         async with self.connect() as ws:
             c = Client(ws)
