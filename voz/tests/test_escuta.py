@@ -188,6 +188,25 @@ class JoseTest(unittest.TestCase):
         self.app._processar_texto("esquerda")
         self.assertEqual(self.backend.enviados, ["esquerda"])
 
+    def test_depois_de_cada_comando_volta_a_exigir_o_jose(self):
+        self.app._processar_texto("josé frente")
+        self.backend.enviados.clear()
+        self.app._fim_da_execucao()  # o robô terminou o movimento
+        self.assertEqual(self.app.estado()["estado"], "acordado")
+        self.app._processar_texto("frente")  # palavra solta (conversa no ambiente): não pode mover o robô
+        self.assertEqual(self.backend.enviados, [])
+        self.app._processar_texto("josé frente")
+        self.assertEqual(self.backend.enviados, ["frente"])
+
+    def test_so_o_jose_vale_por_alguns_segundos(self):
+        self.app._processar_texto("josé")
+        self.app._novo_estado(self.app.OUVINDO)
+        self.app.desde -= jose.JANELA_OUVINDO_S + 1  # passou a janela
+        self.app.passo()
+        self.assertEqual(self.app.estado()["estado"], "acordado")
+        self.app._processar_texto("esquerda")
+        self.assertEqual(self.backend.enviados, [])
+
     def test_conversa_comum_sem_comando_nao_faz_nada(self):
         self.app._processar_texto("bom dia pessoal")
         self.assertEqual(self.app.estado()["dica"], "")

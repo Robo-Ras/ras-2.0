@@ -72,7 +72,7 @@ O formato é **"José, \<comando\>"**. Os comandos são só estes:
 | "**Pare**" / "**Para**" | `parar` | Para na hora e desliga o modo autônomo |
 
 - **Dicionário:** as palavras e as **variações** ("frenti", "dirá", "traze", "atrás", "recua"...) ficam em [`comandos_voz.json`](../comandos_voz.json), na raiz do projeto. Se um reconhecedor escrever uma palavra de um jeito que ainda não está lá, é só **acrescentar na lista** (acento e maiúscula não importam; palavras parecidas com 5+ letras também são aceitas). O mesmo arquivo vale para o José e para o Chrome, e o campo `exemplos` do arquivo é conferido pelos testes nos dois.
-- **"José" é obrigatório para andar**, na mesma frase ("José, vai pra frente" também vale). Frases do dia a dia ("tem uma pessoa na frente da porta") não mexem no robô. Se ele ouve "frente" sem "José", mostra a dica **"Diga José antes do comando"**. Depois de dizer só "José", o rosto desliza e a **próxima palavra de comando já basta**.
+- **"José" é obrigatório para andar**, na mesma frase ("José, vai pra frente" também vale). Frases do dia a dia ("tem uma pessoa na frente da porta") não mexem no robô. Se ele ouve "frente" sem "José", mostra a dica **"Diga José antes do comando"**. Depois de dizer só "José", o rosto desliza e a **próxima palavra de comando já basta, por 6 s**; passou disso, ou depois de **qualquer comando**, é preciso chamar o José de novo (assim uma palavra solta no ambiente nunca move o robô).
 - **"Pare" e "para" valem sozinhos** (parar não pode depender de chamar), mas só se forem a **única** palavra dita: o "para" de "eu vou para casa" não para o robô, e "José, vai para frente" anda.
 - **Dois reconhecedores, o primeiro executa:** o Vosk (no José) e o reconhecimento nativo do **Chrome** (card Voz do painel, botão *Microfone do navegador*) ouvem ao mesmo tempo. O backend executa o primeiro comando que chegar e **ignora o outro por 1,5 s** (`status: duplicate`); "parar" nunca é ignorado. O Chrome precisa de internet e de permissão do microfone.
 - **Velocidade:** o Vosk reconhece enquanto você fala (~50 ms) e o José age quando a frase "se firma", em média **no instante em que você termina de falar**.
@@ -80,8 +80,8 @@ O formato é **"José, \<comando\>"**. Os comandos são só estes:
 ## Fluxo
 
 1. **Acordado** — mostra `joseacordado.png`.
-2. **Ouvindo** — ao ouvir só **"José"**, o rosto desliza para a esquerda e troca para `joseouvindo.png`.
-3. **Comando** — com o backend no ar, mostra `Josefechado.png` com o comando, **para de escutar** até o robô terminar o movimento e volta direto a ouvir (sem precisar dizer "José"). Sem backend, mostra o comando e espera "obrigado", como antes.
+2. **Ouvindo** — ao ouvir só **"José"**, o rosto desliza para a esquerda e troca para `joseouvindo.png` (vale por 6 s).
+3. **Comando** — com o backend no ar, mostra `Josefechado.png` com o comando, **para de escutar** até o robô terminar o movimento e **volta a esperar o "José"**. Sem backend, mostra o comando e espera "obrigado", como antes.
 4. **Obrigado/Obrigada** — (só sem backend) mostra "Ao seu dispor" por 3 s e volta ao rosto acordado.
 
 Os movimentos duram no máximo 4 s e param sozinhos; para parar antes diga "pare" ou use o painel (espaço).
@@ -113,7 +113,7 @@ Diga **"Conversa"** enquanto o José está ouvindo.
 | `joseresponde` + "respondendo..." | Fala a resposta com a voz `pt-BR-AntonioNeural` (microfone desligado) |
 
 - O Gemini recebe o áudio e a transcrição. Pelo tom de voz ele identifica a emoção; se não for neutra, a resposta começa com "Notei que você parece um pouco triste/feliz/...".
-- Ele lembra as últimas perguntas enquanto a conversa durar; **"Voltar"** apaga a memória e volta ao menu (ouvindo comandos, sem precisar dizer "José").
+- Ele lembra as últimas perguntas enquanto a conversa durar; **"Voltar"** apaga a memória e volta ao menu (esperando o "José").
 - **"História"** e os comandos de movimento também funcionam na conversa (para andar, com o "José": "José, frente"); depois do movimento ele volta a conversar.
 - Configurável por variáveis de ambiente (ou no `voz/.env`): `GEMINI_API_KEY`, `JOSE_GEMINI_MODELO` (padrão `gemini-3.1-flash-lite`: responde em ~1 a 2 s; o `gemini-3.8-flash` estava sobrecarregado, com erro 503), `JOSE_VOZ` (padrão `pt-BR-AntonioNeural`), `JOSE_MODELO_CONVERSA` (padrão `small`; o `large-v3-turbo` é mais preciso, mas levava dezenas de segundos neste notebook, e o Gemini já ouve o áudio). Se o Gemini não responder em 15 s, o José avisa em vez de ficar mudo.
 - A detecção de fim de fala usa o volume do microfone (`ENERGIA_MIN_VOZ`, `FATOR_VOZ` em `jose.py`). Em lugar muito barulhento ajuste esses valores.

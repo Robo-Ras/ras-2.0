@@ -71,7 +71,7 @@ Para andar o formato é **"José, \<comando\>"**, e não usa IA (só um dicioná
 | "José, **história**" | Conta histórias ("próxima", "volta", "para") |
 | "José, **conversa**" | Conversa livre com o Gemini ("voltar" sai). Precisa de internet e da `GEMINI_API_KEY` ([voz/README.md](voz/README.md)) |
 
-- Se disser só **"José"**, o rosto desliza e a **próxima palavra** ("frente") já basta.
+- Se disser só **"José"**, o rosto desliza e a **próxima palavra** ("frente") já basta, por 6 s. **Depois de cada comando é preciso dizer "José" de novo** (palavra solta nunca move o robô).
 - Se disser "frente" sem "José", aparece a dica **"Diga José antes do comando"** e o robô não se mexe.
 - O dicionário de palavras e variações está em [`comandos_voz.json`](comandos_voz.json): se um comando não for entendido, acrescente a palavra que ele ouviu. Para ver o que ele ouviu, abra o rosto com `?debug=1`: http://localhost:8090/?debug=1 (normalmente a cara não mostra mensagens).
 

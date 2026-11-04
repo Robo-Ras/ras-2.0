@@ -81,6 +81,9 @@ SILENCIO_FIM_FALA_S = 1.0  # conversa: espera mais, a pessoa pensa entre as pala
 FALA_MIN_S = 0.4  # mais curto que isso é estalo/ruído
 MAX_FALA_S = 30
 DICA_S = 4  # quanto tempo a dica "diga José" fica na tela
+# Depois de dizer só "José", a próxima palavra de comando vale por este tempo; passou, tem que chamar de novo.
+# E depois de cada comando ele também volta a esperar o "José" (evita que uma palavra solta mova o robô).
+JANELA_OUVINDO_S = 6
 ENERGIA_MIN_VOZ = 0.01  # RMS do áudio float32; abaixo disso nunca é fala
 FATOR_VOZ = 3.0  # fala = energia acima de 3x o ruído de fundo
 JANELA_RUIDO_BLOCOS = 30  # o "ruído de fundo" é o percentil 20 dos últimos ~3 s (se adapta a lugar barulhento)
@@ -600,7 +603,8 @@ class AssistenteApp:
         self._novo_estado(self.COMANDO, texto)
 
     def _voltar_ao_menu(self):
-        self._novo_estado(self.OUVINDO)
+        """Depois de um comando (ou de sair da conversa/história): volta a esperar o "José"."""
+        self._mostrar_acordado()
         self.ouvinte.retomar(OuvinteDeAudio.COMANDOS)
 
     def _iniciar_historias(self):
@@ -648,6 +652,8 @@ class AssistenteApp:
             decorrido = time.monotonic() - self.desde
             if self.state == self.TRANSICAO and decorrido >= DURACAO_MOVIMENTO_S:
                 self._novo_estado(self.OUVINDO)
+            elif self.state == self.OUVINDO and decorrido >= JANELA_OUVINDO_S:
+                self._mostrar_acordado()  # só "José" e mais nada: expirou, precisa chamar de novo
             elif self.state == self.AGRADECIMENTO and decorrido >= DURACAO_AGRADECIMENTO_S:
                 self._mostrar_acordado()
             elif self.state == self.HISTORIA and self.player.terminou():
