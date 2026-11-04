@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, OctagonX, RotateCcw, RotateCw } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, OctagonX, RotateCcw, RotateCw, VideoOff } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { driveVector, type Direction } from "@/lib/drive";
 import { getWsUrl } from "@/lib/ws";
@@ -27,6 +27,7 @@ const Controle = () => {
   const [moving, setMoving] = useState(false);
   const [speed, setSpeed] = useState(loadSpeed);
   const [active, setActive] = useState<Direction | null>(null);
+  const [frame, setFrame] = useState<string | null>(null); // preview da câmera (JPEG em base64)
 
   const wsRef = useRef<WebSocket | null>(null);
   const speedRef = useRef(speed);
@@ -51,14 +52,15 @@ const Controle = () => {
     return false;
   }, []);
 
-  const stop = useCallback(() => {
+  // soft=true (soltou o botão): o robô freia em 1 s (cai à metade e para). Sem soft (PARAR, PARE, tela apagou):
+  // corta na hora. Duas vezes: se um pacote se perder, o segundo ainda vale (e o backend também para sozinho)
+  const stop = useCallback((soft = false) => {
     clearInterval(timerRef.current);
     timerRef.current = undefined;
     holdingRef.current = null;
     setActive(null);
-    // duas vezes: se um pacote se perder, o segundo ainda para (e o backend também para sozinho)
-    send({ type: "move", m1: 0, m2: 0, m3: 0 });
-    send({ type: "move", m1: 0, m2: 0, m3: 0 });
+    send({ type: "move", m1: 0, m2: 0, m3: 0, soft });
+    send({ type: "move", m1: 0, m2: 0, m3: 0, soft });
   }, [send]);
 
   const start = useCallback(
@@ -84,7 +86,7 @@ const Controle = () => {
   );
 
   const emergency = useCallback(() => {
-    stop();
+    stop(false);
     send({ type: "set_autonomous", enabled: false });
     try {
       navigator.vibrate?.([60, 40, 60]);
@@ -104,12 +106,16 @@ const Controle = () => {
       wsRef.current = ws;
       ws.onopen = () => {
         setLink("online");
-        ws.send(JSON.stringify({ type: "set_lite", enabled: true })); // sem imagens: só o estado
+        // modo leve: só o estado e a imagem da câmera principal (sem LiDAR nem a segunda câmera)
+        ws.send(JSON.stringify({ type: "set_lite", enabled: true, camera: true }));
       };
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === "serial_status") setArduino(data.connected ? data.port ?? "ok" : null);
-        else if (data.type === "sensor_data") setMoving(!!data.robot_moving);
+        else if (data.type === "sensor_data") {
+          setMoving(!!data.robot_moving);
+          if (data.camera_image) setFrame(data.camera_image);
+        }
       };
       ws.onclose = () => {
         holdingRef.current = null;
@@ -117,6 +123,7 @@ const Controle = () => {
         setActive(null);
         setLink("offline");
         setMoving(false);
+        setFrame(null);
         if (!closed) reconnect = setTimeout(connect, 2000);
       };
     };
@@ -125,15 +132,15 @@ const Controle = () => {
     return () => {
       closed = true;
       clearTimeout(reconnect);
-      stop();
+      stop(false);
       wsRef.current?.close();
     };
   }, [stop]);
 
   // Saiu da aba, bloqueou a tela ou perdeu o foco: para
   useEffect(() => {
-    const onHide = () => stop();
-    const onVisibility = () => document.hidden && stop();
+    const onHide = () => stop(false);
+    const onVisibility = () => document.hidden && stop(false);
     window.addEventListener("blur", onHide);
     window.addEventListener("pagehide", onHide);
     document.addEventListener("visibilitychange", onVisibility);
@@ -149,14 +156,14 @@ const Controle = () => {
       e.currentTarget.setPointerCapture(e.pointerId);
       start(direction);
     },
-    onPointerUp: stop,
-    onPointerCancel: stop,
-    onLostPointerCapture: stop,
+    onPointerUp: () => stop(true),
+    onPointerCancel: () => stop(true),
+    onLostPointerCapture: () => stop(true),
     onContextMenu: (e: React.SyntheticEvent) => e.preventDefault(),
   });
 
   const padClass = (direction: Direction) =>
-    `flex aspect-square w-full select-none items-center justify-center rounded-2xl border text-foreground transition-colors disabled:opacity-40 ${
+    `flex aspect-square w-full select-none items-center justify-center rounded-xl border text-foreground transition-colors disabled:opacity-40 ${
       active === direction ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card active:bg-accent"
     }`;
   const disabled = link !== "online";
@@ -167,14 +174,14 @@ const Controle = () => {
 
   return (
     <div
-      className="mx-auto flex min-h-[100dvh] max-w-md flex-col gap-4 px-4 pb-6 pt-4 select-none"
+      className="mx-auto flex min-h-[100dvh] max-w-md flex-col select-none"
       style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
     >
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-bold leading-tight">RAS 2.0</h1>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className={`h-2 w-2 rounded-full ${statusTone}`} />
+      <header className="flex items-center justify-between gap-3 px-3 py-2">
+        <div className="min-w-0">
+          <h1 className="text-base font-bold leading-tight">RAS 2.0</h1>
+          <div className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${statusTone}`} />
             {status}
             {link === "online" && <span>· {moving ? "andando" : "parado"}</span>}
           </div>
@@ -182,66 +189,74 @@ const Controle = () => {
         <button
           onClick={emergency}
           disabled={disabled}
-          className="flex h-14 items-center gap-2 rounded-2xl bg-destructive px-5 text-base font-bold tracking-wide text-destructive-foreground active:opacity-80 disabled:opacity-40"
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-destructive px-3.5 text-sm font-bold tracking-wide text-destructive-foreground active:opacity-80 disabled:opacity-40"
         >
-          <OctagonX className="h-6 w-6" />
+          <OctagonX className="h-5 w-5" />
           PARAR
         </button>
       </header>
 
+      {/* Preview da C270 na largura toda; a altura que sobra fica para os botões */}
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-black">
+        {frame ? (
+          <img src={`data:image/jpeg;base64,${frame}`} alt="Câmera do robô" className="h-full w-full object-cover" draggable={false} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
+            <VideoOff className="h-7 w-7" />
+            <span className="text-xs">{link === "online" ? "Sem imagem da câmera" : "Sem conexão"}</span>
+          </div>
+        )}
+      </div>
+
       {link === "offline" && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-          Sem conexão com o robô. Confira se o notebook está ligado e no mesmo Wi-Fi. Tentando de novo...
+        <div className="mx-3 mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs">
+          Sem conexão com o robô. Confira o Wi-Fi do notebook. Tentando de novo...
         </div>
       )}
 
-      <main className="flex flex-1 flex-col justify-center gap-4">
-        <div className="grid grid-cols-3 gap-3">
+      <main className="flex flex-1 flex-col justify-center gap-3 px-4 py-3">
+        <div className="mx-auto grid w-full max-w-[236px] grid-cols-3 gap-2">
           <button disabled={disabled} className={padClass("counterclockwise")} aria-label="Girar anti-horário" {...holdProps("counterclockwise")}>
-            <RotateCcw className="h-8 w-8" />
+            <RotateCcw className="h-6 w-6" />
           </button>
           <button disabled={disabled} className={padClass("forward")} aria-label="Frente" {...holdProps("forward")}>
-            <ArrowUp className="h-12 w-12" />
+            <ArrowUp className="h-8 w-8" />
           </button>
           <button disabled={disabled} className={padClass("clockwise")} aria-label="Girar horário" {...holdProps("clockwise")}>
-            <RotateCw className="h-8 w-8" />
+            <RotateCw className="h-6 w-6" />
           </button>
 
           <button disabled={disabled} className={padClass("left")} aria-label="Esquerda" {...holdProps("left")}>
-            <ArrowLeft className="h-12 w-12" />
+            <ArrowLeft className="h-8 w-8" />
           </button>
           <button
             disabled={disabled}
-            onPointerDown={stop}
-            className="flex aspect-square w-full items-center justify-center rounded-2xl border border-destructive/50 bg-destructive/15 text-sm font-bold tracking-wide text-destructive active:bg-destructive/30 disabled:opacity-40"
+            onPointerDown={() => stop(false)}
+            className="flex aspect-square w-full items-center justify-center rounded-xl border border-destructive/50 bg-destructive/15 text-xs font-bold tracking-wide text-destructive active:bg-destructive/30 disabled:opacity-40"
           >
             PARE
           </button>
           <button disabled={disabled} className={padClass("right")} aria-label="Direita" {...holdProps("right")}>
-            <ArrowRight className="h-12 w-12" />
+            <ArrowRight className="h-8 w-8" />
           </button>
 
           <div />
           <button disabled={disabled} className={padClass("backward")} aria-label="Trás" {...holdProps("backward")}>
-            <ArrowDown className="h-12 w-12" />
+            <ArrowDown className="h-8 w-8" />
           </button>
           <div />
         </div>
 
-        <div className="space-y-2 rounded-2xl border border-border bg-card px-4 py-3">
-          <div className="flex items-center justify-between text-sm">
+        <div className="space-y-1.5 rounded-xl border border-border bg-card px-3 py-2">
+          <div className="flex items-center justify-between text-xs">
             <span className="font-medium">Velocidade</span>
-            <span className="tabular text-base font-semibold">{speed}</span>
+            <span className="tabular text-sm font-semibold">{speed}</span>
           </div>
           <Slider value={[speed]} onValueChange={(v) => setSpeed(v[0])} min={20} max={255} step={5} />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Devagar</span>
-            <span>Rápido</span>
-          </div>
         </div>
-      </main>
 
-      <p className="text-center text-xs text-muted-foreground">Segure o botão para andar; ao soltar, o robô para.</p>
+        <p className="text-center text-[11px] text-muted-foreground">Segure para andar; ao soltar o robô freia e para.</p>
+      </main>
     </div>
   );
 };

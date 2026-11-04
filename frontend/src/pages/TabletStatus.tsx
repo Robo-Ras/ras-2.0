@@ -95,16 +95,19 @@ const TabletStatus = () => {
   const config = getStatusConfig();
   const StatusIcon = config.icon;
 
+  // Tudo em vmin (a menor dimensão da tela): a carinha cresce até ocupar a tela, em pé ou deitada,
+  // e nunca passa da altura (antes tinha tamanho fixo e cortava em telas baixas)
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-8">
-      <div className="flex flex-col items-center gap-12">
-        <div className={`${config.bgColor} rounded-full p-16 shadow-2xl transition-all duration-500`}>
-          <StatusIcon className={`${config.iconColor} w-48 h-48 md:w-64 md:h-64`} strokeWidth={1.5} />
-        </div>
-        <h1 className="text-white text-6xl md:text-8xl font-bold tracking-wider">
-          {config.text}
-        </h1>
+    <div className="flex h-[100dvh] w-screen flex-col items-center justify-center gap-[4vmin] overflow-hidden bg-black">
+      <div
+        className={`${config.bgColor} flex items-center justify-center rounded-full shadow-2xl transition-colors duration-500`}
+        style={{ width: '68vmin', height: '68vmin' }}
+      >
+        <StatusIcon className={config.iconColor} style={{ width: '56vmin', height: '56vmin' }} strokeWidth={1.4} />
       </div>
+      <h1 className="font-bold tracking-wider text-white" style={{ fontSize: '11vmin', lineHeight: 1 }}>
+        {config.text}
+      </h1>
     </div>
   );
 };

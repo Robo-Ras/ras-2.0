@@ -527,7 +527,8 @@ Endereço: `ws://<host>:8765`. Todas as mensagens são JSON com um campo `type`.
 | `set_autonomous_speed` | `speed` | Velocidade base do autônomo |
 | `toggle_yolo` | `enabled` | Liga/desliga o YOLO (carrega o modelo na primeira vez) |
 | `move` com `hold: true` | `m1, m2, m3, hold` | Movimento "segurando" (celular): precisa ser repetido a cada < 0,6 s (`HOLD_TIMEOUT_S`), senão o backend para os motores |
-| `set_lite` | `enabled` | Esta conexão passa a receber o `sensor_data` sem `camera_image`, `realsense_image` e `lidar_scan` |
+| `set_lite` | `enabled`, `camera` | Esta conexão passa a receber o `sensor_data` sem `camera_image`, `realsense_image` e `lidar_scan`; com `camera: true` mantém só a `camera_image` (preview do celular) |
+| `move` com `soft: true` | `m1, m2, m3 = 0, soft` | Soltou o botão: o robô freia (ABS, `BRAKE_S` = 1 s, cai a `BRAKE_FACTOR` = metade) e para. Sem `soft`, `0,0,0` corta na hora. Mudar de direção durante um movimento também freia antes de virar |
 | `robot_face_heartbeat` | — | Marca o tablet como conectado (expira em 5 s) |
 
 ### Do backend para o navegador

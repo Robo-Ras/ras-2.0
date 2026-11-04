@@ -172,7 +172,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             await Client(lite).send(type='set_lite', enabled=True)
             data_full = await Client(full).wait_for('sensor_data', lambda m: 'camera_image' in m and 'lidar_scan' in m)
             self.assertIn('camera_image', data_full)
-            data_lite = await Client(lite).wait_for('sensor_data', lambda m: 'robot_moving' in m)
+            data_lite = await Client(lite).wait_for('sensor_data', lambda m: 'robot_moving' in m and 'lidar_scan' not in m)
             for key in rac.LITE_DROPPED_KEYS:
                 self.assertNotIn(key, data_lite)
             self.assertIn('sensors_status', data_lite)
@@ -220,6 +220,92 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             x, y, theta = self.world.pose()
             self.assertNotAlmostEqual(math.remainder(theta - theta0, 2 * math.pi), 0.0, places=1)
             await c.send(type='voice_command', command='parar', text='pare')
+
+    # ---- Freio suave (ABS): em 1 s a velocidade cai à metade e então o robô para ----
+
+    def speed_now(self):
+        return max(abs(w) for w in self.world.wheels)
+
+    async def sample_speed(self, seconds, step=0.1):
+        amostras = []
+        for _ in range(int(seconds / step)):
+            amostras.append(self.speed_now())
+            await asyncio.sleep(step)
+        return amostras
+
+    async def test_voice_move_brakes_to_half_then_stops(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='voice_command', command='frente', text='josé frente', source='jose')
+            amostras = await self.sample_speed(rac.VOICE_MOVES['frente'][1] + 0.4)
+            full = rac.VOICE_SPEED
+            self.assertEqual(max(amostras), full)  # começa na velocidade cheia
+            freando = [a for a in amostras if 0 < a < full]
+            self.assertTrue(freando, "tem que haver uma descida gradual, não um corte")
+            self.assertGreaterEqual(min(freando), full * rac.BRAKE_FACTOR - 2)  # nunca abaixo da metade antes de parar
+            descida = [a for a in amostras[amostras.index(full):] if a > 0]
+            self.assertEqual(descida, sorted(descida, reverse=True))  # só diminui
+            self.assertEqual(amostras[-1], 0)  # e então para
+
+    async def test_manual_release_brakes_but_emergency_stop_is_immediate(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            for _ in range(3):
+                await c.send(type='move', m1=100, m2=0, m3=-100, hold=True)
+                await asyncio.sleep(0.1)
+            await c.send(type='move', m1=0, m2=0, m3=0, soft=True)  # soltou o botão (celular)
+            await asyncio.sleep(0.45)
+            meio = self.speed_now()
+            self.assertTrue(rac.VOICE_SPEED * rac.BRAKE_FACTOR - 2 <= meio < 100, f"freando, mas era {meio}")
+            await asyncio.sleep(1.0)
+            self.assertEqual(self.speed_now(), 0)  # parou depois de 1 s
+
+            # parada de emergência (sem soft) corta na hora, até no meio de uma freada
+            for _ in range(3):
+                await c.send(type='move', m1=100, m2=0, m3=-100, hold=True)
+                await asyncio.sleep(0.1)
+            await c.send(type='move', m1=0, m2=0, m3=0, soft=True)
+            await asyncio.sleep(0.3)
+            self.assertGreater(self.speed_now(), 0)
+            await c.send(type='move', m1=0, m2=0, m3=0)  # PARAR
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+
+    async def test_changing_direction_brakes_first(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='move', m1=100, m2=0, m3=-100)  # frente, sem hold (botão do painel)
+            await asyncio.sleep(0.3)
+            self.assertEqual(self.world.wheels, (100, 0, -100))
+            await c.send(type='move', m1=0, m2=-100, m3=100)  # esquerda
+            await asyncio.sleep(0.5)
+            m1, m2, m3 = self.world.wheels
+            self.assertTrue(m2 == 0 and 50 <= m1 < 100, f"ainda freando a frente: {self.world.wheels}")
+            await asyncio.sleep(0.9)
+            self.assertEqual(self.world.wheels, (0, -100, 100))  # depois da freada, vira
+
+    async def test_same_direction_new_speed_does_not_brake(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='move', m1=60, m2=0, m3=-60)
+            await asyncio.sleep(0.2)
+            await c.send(type='move', m1=120, m2=0, m3=-120)  # só mudou a velocidade (slider)
+            await asyncio.sleep(0.2)
+            self.assertEqual(self.world.wheels, (120, 0, -120))
+            await c.send(type='move', m1=0, m2=0, m3=0)
+
+    async def test_lite_client_can_ask_for_the_main_camera_only(self):
+        async with self.connect() as phone:
+            await Client(phone).send(type='set_lite', enabled=True, camera=True)
+            # as primeiras mensagens podem chegar antes de o servidor processar o pedido: espera uma já "leve"
+            data = await Client(phone).wait_for('sensor_data', lambda m: 'camera_image' in m and 'lidar_scan' not in m)
+            self.assertIn('camera_image', data)
+            for key in ('lidar_scan', 'realsense_image'):
+                self.assertNotIn(key, data)
 
     async def test_voice_command_moves_then_stops(self):
         async with self.connect() as ws:

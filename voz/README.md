@@ -50,7 +50,7 @@ cd ~/ras-2.0/voz
 ~/L515/bin/python jose.py --sem-robo            # só o rosto, sem mandar comandos
 ```
 
-A cara do José **não mostra mensagens de texto** (o que ele ouviu, velocidade, dicas, fases da conversa). Para ver esses textos ao ajustar o dicionário, abra **http://localhost:8090/?debug=1**.
+A cara do José **ocupa a tela toda**: a página mede onde está o desenho de cada estado e dá zoom até ele preencher a janela (também recorta a lista de palavras "Me segue / Parar..." que vem desenhada dentro das imagens "ouvindo" e "história"). Ela **não mostra mensagens de texto** (o que ele ouviu, velocidade, dicas, fases da conversa). Para ver esses textos ao ajustar o dicionário, abra **http://localhost:8090/?debug=1**.
 
 O navegador abre sozinho no rosto (`--no-browser` evita). **Clique na página para tela cheia**; `Esc` sai. A página consulta `/estado` a cada 100 ms; se o José for fechado, ela avisa e volta sozinha quando ele subir de novo.
 
@@ -84,7 +84,7 @@ O formato é **"José, \<comando\>"**. Os comandos são só estes:
 3. **Comando** — com o backend no ar, mostra `Josefechado.png` com o comando, **para de escutar** até o robô terminar o movimento e **volta a esperar o "José"**. Sem backend, mostra o comando e espera "obrigado", como antes.
 4. **Obrigado/Obrigada** — (só sem backend) mostra "Ao seu dispor" por 3 s e volta ao rosto acordado.
 
-Os movimentos duram no máximo 4 s e param sozinhos; para parar antes diga "pare" ou use o painel (espaço).
+Os movimentos duram no máximo 4 s e param sozinhos, **com freio suave**: nos últimos 1 s a velocidade cai à metade e então o robô para. Para parar na hora diga "pare" ou use o painel (espaço).
 
 Os tempos e a velocidade ficam em `VOICE_MOVES` e `VOICE_SPEED` em `backend/robot_autonomous_control.py`. Os tempos de giro são estimativas: **calibre no robô real**.
 

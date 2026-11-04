@@ -20,16 +20,18 @@
     font-family: Arial, Helvetica, sans-serif;
     cursor: none;
   }
+  /* O palco (1920x1080) é enquadrado por JS: dá zoom até o desenho do estado atual preencher a tela */
   #palco {
     position: absolute;
-    left: 50%;
-    top: 50%;
+    left: 0;
+    top: 0;
     width: 1920px;
     height: 1080px;
-    transform-origin: center;
+    transform-origin: 0 0;
     overflow: hidden;
     background: var(--fundo);
   }
+  #palco.pronto { transition: transform 0.35s ease; }
   #rosto {
     position: absolute;
     left: 0;
@@ -193,28 +195,103 @@
   const $ = (id) => document.getElementById(id);
   const palco = $('palco');
 
-  // Mantém a proporção 16:9; como no original, só reduz, nunca amplia
-  const ajustarEscala = () => {
-    const escala = Math.min(innerWidth / 1920, innerHeight / 1080, 1);
-    palco.style.transform = `translate(-50%, -50%) scale(${escala})`;
+  // ---- Enquadramento: a cara usa só uma parte pequena da imagem 1920x1080 (o resto é branco). Mede onde está o
+  // desenho de cada estado (e o texto, quando há) e dá zoom até esse conteúdo preencher a tela.
+  // Nas imagens "ouvindo" e "história" a lista de palavras ("Me segue", "Parar"...) está desenhada dentro da própria
+  // imagem, à direita do rosto. A cara não mostra mensagens: corta esse texto fora (?debug=1 mostra tudo).
+  const DEBUG = new URLSearchParams(location.search).has('debug');
+  const CORTE_TEXTO = DEBUG ? {} : { ouvindo: 960, historia: 1030 }; // x (px da imagem) a partir do qual é texto
+  const MARGEM = 0.06; // folga em volta do conteúdo
+  const ZOOM_MAX = 6;
+  const DESLIZE = 463.4; // quanto o rosto desliza ao ouvir "José"
+  const caixas = {};
+
+  // Retângulo (em px da imagem) do que não é branco, ou null
+  const caixaDaImagem = (nome, xMax = 1920) => caixas[`${nome}|${xMax}`] ??= new Promise((pronto) => {
+    const img = new Image();
+    img.onload = () => {
+      const L = 480, A = 270; // amostra reduzida (1/4): rápido e já suaviza a borda
+      const c = document.createElement('canvas');
+      c.width = L; c.height = A;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, L, A);
+      ctx.drawImage(img, 0, 0, L, A);
+      const d = ctx.getImageData(0, 0, L, A).data;
+      let x0 = L, y0 = A, x1 = -1, y1 = -1;
+      for (let y = 0; y < A; y++) {
+        for (let x = 0; x < Math.min(L, xMax / 4); x++) {
+          const i = (y * L + x) * 4;
+          if (d[i] < 235 || d[i + 1] < 235 || d[i + 2] < 235) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      pronto(x1 < 0 ? null : { x0: x0 * 4, y0: y0 * 4, x1: (x1 + 1) * 4, y1: (y1 + 1) * 4 });
+    };
+    img.onerror = () => pronto(null);
+    img.src = `/rostojose/${nome}`;
+  });
+
+  // Retângulo do texto de um elemento, em px do palco (independe do zoom e da animação em curso)
+  const caixaDoTexto = (el) => {
+    const faixa = document.createRange();
+    faixa.selectNodeContents(el);
+    const r = faixa.getBoundingClientRect();
+    const p = palco.getBoundingClientRect();
+    const k = p.width / 1920;
+    return { x0: (r.left - p.left) / k, y0: (r.top - p.top) / k, x1: (r.right - p.left) / k, y1: (r.bottom - p.top) / k };
   };
-  addEventListener('resize', ajustarEscala);
-  ajustarEscala();
+
+  let enquadramento = 0;
+  let estadoAtual = 'acordado';
+  const enquadrar = async (estado) => {
+    const minha = ++enquadramento; // se o estado mudar no meio, vale só o último
+    const nome = IMAGENS[estado];
+    const rosto = nome ? await caixaDaImagem(nome, CORTE_TEXTO[estado] || 1920) : null;
+    if (minha !== enquadramento) return;
+    const partes = rosto ? [rosto] : [];
+    if (rosto && estado === 'transicao') partes.push({ ...rosto, x0: rosto.x0 - DESLIZE, x1: rosto.x1 - DESLIZE });
+    for (const id of ['comando', 'agradecimento']) if (!$(id).hidden) partes.push(caixaDoTexto($(id)));
+    if (estado === 'historia') partes.push(caixaDoTexto($('titulo')), { x0: 164.6, y0: 908.8, x1: 1682, y1: 973.8 });
+    if (!partes.length) partes.push({ x0: 0, y0: 0, x1: 1920, y1: 1080 });
+    const u = {
+      x0: Math.min(...partes.map((r) => r.x0)), y0: Math.min(...partes.map((r) => r.y0)),
+      x1: Math.max(...partes.map((r) => r.x1)), y1: Math.max(...partes.map((r) => r.y1)),
+    };
+    const escala = Math.min(
+      innerWidth / ((u.x1 - u.x0) * (1 + 2 * MARGEM)),
+      innerHeight / ((u.y1 - u.y0) * (1 + 2 * MARGEM)),
+      ZOOM_MAX,
+    );
+    const tx = innerWidth / 2 - ((u.x0 + u.x1) / 2) * escala;
+    const ty = innerHeight / 2 - ((u.y0 + u.y1) / 2) * escala;
+    palco.style.transform = `translate(${tx}px, ${ty}px) scale(${escala})`;
+    if (!palco.classList.contains('pronto')) requestAnimationFrame(() => palco.classList.add('pronto'));
+  };
+  addEventListener('resize', () => enquadrar(estadoAtual));
+  enquadrar(estadoAtual);
 
   // Clique entra em tela cheia (Esc sai)
   document.addEventListener('click', () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   });
 
-  if (new URLSearchParams(location.search).has('debug')) document.body.classList.add('debug');
+  if (DEBUG) document.body.classList.add('debug');
 
   let estadoAnterior = null;
+  let chaveAnterior = '';
 
   const mostrar = (e) => {
     const rosto = $('rosto');
     const imagem = IMAGENS[e.estado];
     rosto.hidden = !imagem;
     if (imagem && !rosto.src.endsWith(imagem)) rosto.src = `/rostojose/${imagem}`;
+    const corte = CORTE_TEXTO[e.estado];
+    rosto.style.clipPath = corte ? `inset(0 ${1920 - corte}px 0 0)` : 'none';
 
     if (e.estado !== estadoAnterior) {
       // Só o estado "transicao" desliza; nos outros o rosto volta para x 0 sem animação
@@ -243,6 +320,13 @@
     $('velocidade').textContent = e.velocidade;
     $('aviso-chamar').textContent = e.dica || '';
     $('aviso-chamar').hidden = !e.dica;
+
+    const chave = `${e.estado}|${e.comando}|${e.titulo}`; // o conteúdo mudou: enquadra de novo
+    if (chave !== chaveAnterior) {
+      chaveAnterior = chave;
+      estadoAtual = e.estado;
+      enquadrar(e.estado);
+    }
   };
 
   const atualizar = async () => {

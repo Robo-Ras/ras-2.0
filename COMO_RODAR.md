@@ -85,20 +85,25 @@ O painel também ouve: botão *Microfone do navegador* no card **Voz** (só no C
 
 O terminal mostra uma linha como `📱 Controle do celular: http://10.189.148.202:8100`. Abra esse endereço no celular, **ligado no mesmo Wi-Fi do notebook**. É uma tela só com os botões de movimento:
 
-- **Segure** um botão para andar; ao **soltar**, o robô para. Se o Wi-Fi cair ou a tela apagar, o backend para o robô sozinho em 0,6 s.
+- No topo da tela aparece o **preview da C270 ao vivo**, na largura toda; os botões ficam embaixo, menores.
+- **Segure** um botão para andar; ao **soltar**, o robô **freia** (em 1 s a velocidade cai à metade e então ele para). Se o Wi-Fi cair ou a tela apagar, o backend corta os motores sozinho em 0,6 s.
 - **PARAR** (vermelho, no topo) para os motores e desliga o modo autônomo.
 - O controle de velocidade fica na própria tela e é lembrado.
-- O celular recebe só o estado, sem imagens, então não pesa no Wi-Fi.
+- O celular recebe só o estado e a imagem da C270 (sem LiDAR nem a D435), então pesa pouco no Wi-Fi.
 
 O painel (8080) e o rosto do José (8090) continuam abertos **só no notebook**. Com `--controle`, o backend (porta 8765) e o controle (8100) ficam acessíveis na rede: qualquer aparelho no mesmo Wi-Fi consegue mover o robô. Use em rede confiável (não em Wi-Fi público).
 
 Quando só existe uma porta serial (fora a do LiDAR), o Arduino conecta sozinho ao iniciar, sem precisar do painel.
 
-## 6. Esconder sensores da interface
+## 6. Freio suave ("ABS")
+
+Para não derrapar nem parar de uma vez, ao **terminar um comando**, **soltar o botão** (celular) ou **trocar de direção**, o robô **reduz a velocidade à metade em 1 segundo e só então para** (ou vira, na troca de direção). Vale para os comandos de voz e para o controle manual (painel e celular). **Parada de emergência não freia**: o botão PARAR, o "pare" por voz e o celular sem sinal cortam os motores na hora. O modo autônomo não usa o freio (ele precisa reagir rápido a obstáculos).
+
+## 7. Esconder sensores da interface
 
 Cada câmera e o LiDAR têm um interruptor no canto do card. Desligado, o item some da tela (e do resumo de obstáculos), por exemplo para apresentar só com a C270. Isso **só esconde**: o robô continua lendo todos os sensores. A escolha fica salva no navegador.
 
-## 7. Usar pelo tablet
+## 8. Usar pelo tablet
 
 ```bash
 ./start.sh --lan --voz
@@ -111,7 +116,7 @@ No tablet, na mesma rede Wi-Fi (descubra o IP do notebook com `hostname -I`):
 
 Com `--lan`, qualquer pessoa na mesma rede consegue controlar o robô. Use só em rede confiável.
 
-## 8. Desligar
+## 9. Desligar
 
 `Ctrl+C` no terminal do `start.sh`. Os motores recebem a ordem de parar, e o backend, o painel e o José fecham juntos. Depois desligue a bateria.
 

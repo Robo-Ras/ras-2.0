@@ -51,6 +51,12 @@ VOICE_DEDUP_S = 1.5
 # O que o modo "leve" (celular) não recebe do sensor_data: imagens e nuvem de pontos
 LITE_DROPPED_KEYS = ('camera_image', 'realsense_image', 'lidar_scan')
 
+# Freio suave ("ABS"): ao terminar um movimento ou trocar de direção, em BRAKE_S segundos a velocidade cai
+# para BRAKE_FACTOR (metade) e só então o robô para. Parada de emergência (PARAR, "pare", celular sem sinal) corta na hora.
+BRAKE_S = 1.0
+BRAKE_FACTOR = 0.5
+BRAKE_STEP_S = 0.1
+
 # Controle por toque (celular): o comando precisa ser renovado a cada < HOLD_TIMEOUT_S
 HOLD_TIMEOUT_S = 0.6
 # Reconhecidos, mas ainda sem comportamento no backend (só aparecem na interface)
@@ -431,6 +437,15 @@ class AutonomousNavigator:
         return 'forward', self.base_speed, detection_info
 
 
+def same_direction(a, b):
+    """True se dois vetores de motores apontam para o mesmo lado (mudar só a velocidade não conta como trocar)"""
+    na = math.sqrt(sum(v * v for v in a))
+    nb = math.sqrt(sum(v * v for v in b))
+    if not na or not nb:
+        return False
+    return sum(x * y for x, y in zip(a, b)) / (na * nb) >= 0.7
+
+
 class RobotController:
     """Controla o robô via Arduino (ou Arduino simulado na porta 'SIM')"""
 
@@ -440,6 +455,7 @@ class RobotController:
         self.speed = 150
         self.sim_world = sim_world
         self.reserved_ports = set()  # portas em uso por outros sensores (LiDAR)
+        self.last_vec = (0, 0, 0)  # último comando enviado aos motores (o freio parte dele)
 
     def connect(self, port):
         """Conecta ao Arduino"""
@@ -488,13 +504,14 @@ class RobotController:
             command = f"{m1},{m2},{m3}\n"
             print(f"📤 ENVIANDO PARA ARDUINO: {command.strip()}")
             self.serial_port.write(command.encode())
+            self.last_vec = (m1, m2, m3)
             return True
         except Exception as e:
             print(f"✗ Erro ao enviar comando: {e}")
             return False
 
-    def move(self, direction, speed):
-        """Move o robô em uma direção"""
+    def vector(self, direction, speed):
+        """Valores (M1, M2, M3) de uma direção, ou None se a direção não existe"""
 
         commands = {
             # Frente/trás invertidos após o teste no robô real (os botões do painel e do celular
@@ -507,11 +524,12 @@ class RobotController:
             'rotate_left': (-speed, -speed, -speed), # Rotação anti-horária in-place
             'stop': (0, 0, 0)
         }
+        return commands.get(direction)
 
-        if direction in commands:
-            m1, m2, m3 = commands[direction]
-            return self.send_command(m1, m2, m3)
-        return False
+    def move(self, direction, speed):
+        """Move o robô em uma direção"""
+        vec = self.vector(direction, speed)
+        return self.send_command(*vec) if vec else False
 
     def get_available_ports(self):
         """Lista portas seriais disponíveis (sem as do LiDAR)"""
@@ -617,6 +635,7 @@ class WebSocketServer:
 
         self.clients = set()
         self.lite_clients = set()  # ex.: celular de controle: recebe o estado, sem imagens nem LiDAR
+        self.lite_camera = set()  # dos lite, quem também quer a imagem da câmera principal (preview do celular)
         self.autonomous_mode = False
         self.running = True
         self.tablet_connected = False
@@ -625,6 +644,8 @@ class WebSocketServer:
         self.last_navigation = None
         self.voice_task = None  # movimento curto disparado por comando de voz
         self.voice_last_move = -1e9  # quando o último comando de voz de movimento foi aceito
+        self.brake_task = None  # freio suave do controle manual (soltar o botão, trocar de direção)
+        self.pending_vec = None  # movimento pedido durante a freada: começa quando ela acabar
         self.hold_deadline = None  # movimento "segurando" (celular): para se o comando não for renovado
 
     async def register(self, websocket):
@@ -644,9 +665,11 @@ class WebSocketServer:
         """Remove cliente"""
         self.clients.discard(websocket)
         self.lite_clients.discard(websocket)
+        self.lite_camera.discard(websocket)
         print(f"✗ Cliente desconectado. Total: {len(self.clients)}")
         if not self.clients:
             # Ninguém mais controlando: por segurança para o robô
+            self.cancel_brake()
             self.autonomous_mode = False
             self.robot.move('stop', 0)
             self.robot_moving = False
@@ -655,13 +678,21 @@ class WebSocketServer:
         """Envia mensagem para todos os clientes"""
         if self.clients:
             payload = json.dumps(message, default=_json_default)
-            lite_payload = payload
+            lite_payload = lite_camera_payload = payload
             if self.lite_clients and message.get('type') == 'sensor_data':
                 lite_payload = json.dumps(
                     {k: v for k, v in message.items() if k not in LITE_DROPPED_KEYS}, default=_json_default)
+                lite_camera_payload = json.dumps(
+                    {k: v for k, v in message.items() if k not in LITE_DROPPED_KEYS or k == 'camera_image'},
+                    default=_json_default)
+
+            def payload_for(client):
+                if client in self.lite_camera:
+                    return lite_camera_payload
+                return lite_payload if client in self.lite_clients else payload
+
             await asyncio.gather(
-                *[client.send(lite_payload if client in self.lite_clients else payload)
-                  for client in list(self.clients)],
+                *[client.send(payload_for(client)) for client in list(self.clients)],
                 return_exceptions=True
             )
 
@@ -676,7 +707,10 @@ class WebSocketServer:
                     print(f"⚠ Mensagem inválida ignorada: {message[:80]!r}")
                     continue
                 if data.get('type') == 'set_lite':
-                    (self.lite_clients.add if data.get('enabled', True) else self.lite_clients.discard)(websocket)
+                    enabled = data.get('enabled', True)
+                    (self.lite_clients.add if enabled else self.lite_clients.discard)(websocket)
+                    # camera=true: continua recebendo só a imagem da câmera principal (preview do celular)
+                    (self.lite_camera.add if enabled and data.get('camera') else self.lite_camera.discard)(websocket)
                     continue
                 await self.process_command(data)
         except websockets.ConnectionClosed:
@@ -737,6 +771,7 @@ class WebSocketServer:
             })
 
         elif cmd_type == 'disconnect_serial':
+            self.cancel_brake()
             self.autonomous_mode = False
             self.robot.disconnect()
             self.robot_moving = False
@@ -750,21 +785,21 @@ class WebSocketServer:
             self.cancel_voice_move()
             now = asyncio.get_running_loop().time()
             if 'm1' in data and 'm2' in data and 'm3' in data:
-                print(f"🎮 COMANDO RECEBIDO DO FRONTEND: M1={data['m1']}, M2={data['m2']}, M3={data['m3']}")
-                self.robot.send_command(data['m1'], data['m2'], data['m3'])
-                is_moving = any([data['m1'] != 0, data['m2'] != 0, data['m3'] != 0])
+                self.manual_move((int(data['m1']), int(data['m2']), int(data['m3'])),
+                                 soft=bool(data.get('soft')), hold=bool(data.get('hold')), now=now)
             else:
                 direction = data.get('direction')
+                self.cancel_brake()
                 self.robot.move(direction, data.get('speed', 150))
                 is_moving = direction != 'stop'
-            self.robot_moving = is_moving
-            if is_moving:
-                self.last_move_time = now
-            # hold=true: o cliente repete o comando enquanto o dedo está na tela; sem renovação, para
-            self.hold_deadline = now + HOLD_TIMEOUT_S if is_moving and data.get('hold') else None
+                self.robot_moving = is_moving
+                if is_moving:
+                    self.last_move_time = now
+                self.hold_deadline = None
 
         elif cmd_type == 'set_autonomous':
             self.hold_deadline = None
+            self.cancel_brake()
             self.cancel_voice_move()
             self.autonomous_mode = data.get('enabled', False)
             if 'speed' in data:
@@ -783,6 +818,70 @@ class WebSocketServer:
         elif cmd_type == 'robot_face_heartbeat':
             self.tablet_connected = True
 
+    def cancel_brake(self):
+        if self.brake_task and not self.brake_task.done():
+            self.brake_task.cancel()
+        self.brake_task = None
+        self.pending_vec = None
+
+    def manual_move(self, vec, soft, hold, now):
+        """Movimento manual (painel ou celular), com freio suave:
+
+        - soltar o botão (soft) ou trocar de direção: freia em BRAKE_S s (cai à metade) e então para/troca;
+        - parada normal (m = 0,0,0 sem soft: botão PARAR) corta na hora, até no meio de uma freada.
+        """
+        moving = any(self.robot.last_vec)
+        braking = self.brake_task is not None and not self.brake_task.done()
+        print(f"🎮 COMANDO RECEBIDO DO FRONTEND: M1={vec[0]}, M2={vec[1]}, M3={vec[2]}" + (" (soft)" if soft else ""))
+
+        if not any(vec):
+            self.hold_deadline = None
+            if soft and (moving or braking):
+                if not braking:  # soltou o botão: não corta de uma vez
+                    self.brake_task = asyncio.create_task(self._brake_manual())
+                return
+            self.cancel_brake()
+            self.robot.send_command(0, 0, 0)
+            self.robot_moving = False
+            return
+
+        self.hold_deadline = now + HOLD_TIMEOUT_S if hold else None  # hold: o cliente tem que renovar
+        if braking:
+            self.pending_vec = vec  # começa quando a freada acabar
+            return
+        if moving and not same_direction(self.robot.last_vec, vec):
+            self.pending_vec = vec  # trocou de direção: freia antes de virar
+            self.brake_task = asyncio.create_task(self._brake_manual())
+            return
+        self.robot.send_command(*vec)
+        self.robot_moving = True
+        self.last_move_time = now
+
+    async def _brake(self):
+        """ABS: em BRAKE_S segundos reduz o movimento atual à metade e então para."""
+        vec0 = self.robot.last_vec
+        if not any(vec0):
+            return
+        loop = asyncio.get_running_loop()
+        t0 = loop.time()
+        self.robot_moving = True
+        while (elapsed := loop.time() - t0) < BRAKE_S:
+            k = 1.0 - (1.0 - BRAKE_FACTOR) * elapsed / BRAKE_S
+            self.robot.send_command(*(round(v * k) for v in vec0))
+            self.last_move_time = loop.time()  # o timeout do movimento manual não pode achar que parou
+            await asyncio.sleep(BRAKE_STEP_S)
+        self.robot.move('stop', 0)
+        self.robot_moving = False
+
+    async def _brake_manual(self):
+        await self._brake()
+        vec, self.pending_vec = self.pending_vec, None
+        loop = asyncio.get_running_loop()
+        if vec and any(vec) and (self.hold_deadline is None or loop.time() < self.hold_deadline):
+            self.robot.send_command(*vec)  # o movimento pedido durante a freada
+            self.robot_moving = True
+            self.last_move_time = loop.time()
+
     def cancel_voice_move(self):
         if self.voice_task and not self.voice_task.done():
             self.voice_task.cancel()
@@ -798,6 +897,7 @@ class WebSocketServer:
                                     'source': source, 'status': 'duplicate', 'running': False})
             return
         self.cancel_voice_move()
+        self.cancel_brake()
         status = 'ok'
 
         if command == 'parar':
@@ -828,17 +928,20 @@ class WebSocketServer:
 
     async def _voice_move(self, command, direction, seconds):
         loop = asyncio.get_running_loop()
-        end = loop.time() + seconds
         try:
             # Se for cancelado, quem cancelou (outro comando, joystick, autônomo) assume os motores
-            self.robot.move(direction, VOICE_SPEED)
+            vec = self.robot.vector(direction, VOICE_SPEED)
+            if any(self.robot.last_vec) and not same_direction(self.robot.last_vec, vec):
+                await self._brake()  # já estava andando para outro lado: freia antes de virar
+            end = loop.time() + seconds
+            self.robot.send_command(*vec)
             self.robot_moving = True
-            # Mantém last_move_time em dia para o timeout de movimento manual não marcar como parado
-            while loop.time() < end:
+            # Velocidade cheia até faltar BRAKE_S; os últimos BRAKE_S segundos são a freada suave
+            while loop.time() < end - BRAKE_S:
+                # Mantém last_move_time em dia para o timeout de movimento manual não marcar como parado
                 self.last_move_time = loop.time()
                 await asyncio.sleep(0.1)
-            self.robot.move('stop', 0)
-            self.robot_moving = False
+            await self._brake()
         finally:
             await self.send_to_all({'type': 'voice_command_done', 'command': command})
 
@@ -943,6 +1046,7 @@ class WebSocketServer:
                 # Trava de segurança do controle por toque: comando não renovado = para os motores
                 if self.hold_deadline is not None and loop_start > self.hold_deadline:
                     self.hold_deadline = None
+                    self.cancel_brake()
                     self.robot.move('stop', 0)
                     self.robot_moving = False
 
