@@ -73,7 +73,7 @@ Para andar o formato é **"José, \<comando\>"**, e não usa IA (só um dicioná
 
 - Se disser só **"José"**, o rosto desliza e a **próxima palavra** ("frente") já basta.
 - Se disser "frente" sem "José", aparece a dica **"Diga José antes do comando"** e o robô não se mexe.
-- O dicionário de palavras e variações está em [`comandos_voz.json`](comandos_voz.json): se um comando não for entendido, acrescente a palavra que apareceu na tela (canto superior esquerdo do rosto).
+- O dicionário de palavras e variações está em [`comandos_voz.json`](comandos_voz.json): se um comando não for entendido, acrescente a palavra que ele ouviu. Para ver o que ele ouviu, abra o rosto com `?debug=1`: http://localhost:8090/?debug=1 (normalmente a cara não mostra mensagens).
 
 O painel também ouve: botão *Microfone do navegador* no card **Voz** (só no Chrome ou Edge, precisa de internet). Os dois reconhecedores ouvem ao mesmo tempo e **o primeiro que detectar executa** (o outro é ignorado por 1,5 s).
 

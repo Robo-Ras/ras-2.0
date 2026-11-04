@@ -24,7 +24,7 @@ const Index = () => {
   const [arduinoPort, setArduinoPort] = useState<string | null>(null);
   const [autonomousMode, setAutonomousMode] = useState(false);
   const [robotMoving, setRobotMoving] = useState(false);
-  const [autonomousSpeed, setAutonomousSpeed] = useState(100);
+  const [autonomousSpeed, setAutonomousSpeed] = useState(60);
   const [cameraImage, setCameraImage] = useState<string>();
   const [realsenseImage, setRealsenseImage] = useState<string>();
   const [sensorsStatus, setSensorsStatus] = useState<SensorsStatus>();

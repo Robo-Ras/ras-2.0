@@ -34,6 +34,8 @@ SIM_PORT = 'SIM'
 # O Arduino não para sozinho, então cada comando é um movimento curto que termina com 'stop'.
 # Os tempos de giro dependem da velocidade e do piso: calibre no robô real.
 VOICE_SPEED = 100
+# Velocidade padrão do modo autônomo (o slider do painel e o celular começam nela)
+AUTONOMOUS_SPEED = 60
 VOICE_MOVES = {
     'frente': ('forward', 1.5),
     'tras': ('backward', 1.5),
@@ -326,7 +328,7 @@ class AutonomousNavigator:
 
     def __init__(self):
         self.current_state = 'moving_forward'
-        self.base_speed = 100
+        self.base_speed = AUTONOMOUS_SPEED  # padrão 60; o painel pode mudar
         self.rotation_counter = 0
         self.rotation_steps_45deg = 2
         self.rotation_direction = None  # 'left' ou 'right'
@@ -773,7 +775,7 @@ class WebSocketServer:
             await self.send_to_all({'type': 'autonomous_status', 'enabled': self.autonomous_mode})
 
         elif cmd_type == 'set_autonomous_speed':
-            self.navigator.base_speed = data.get('speed', 100)
+            self.navigator.base_speed = data.get('speed', AUTONOMOUS_SPEED)
 
         elif cmd_type == 'toggle_yolo':
             await self.set_yolo(data.get('enabled', False))

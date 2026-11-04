@@ -50,6 +50,8 @@ cd ~/ras-2.0/voz
 ~/L515/bin/python jose.py --sem-robo            # só o rosto, sem mandar comandos
 ```
 
+A cara do José **não mostra mensagens de texto** (o que ele ouviu, velocidade, dicas, fases da conversa). Para ver esses textos ao ajustar o dicionário, abra **http://localhost:8090/?debug=1**.
+
 O navegador abre sozinho no rosto (`--no-browser` evita). **Clique na página para tela cheia**; `Esc` sai. A página consulta `/estado` a cada 100 ms; se o José for fechado, ela avisa e volta sozinha quando ele subir de novo.
 
 O áudio das histórias toca no computador onde o `jose.py` roda, não no navegador.

@@ -115,7 +115,7 @@
     text-overflow: ellipsis;
   }
   #velocidade { right: 10px; bottom: 10px; font-size: 13px; }
-  #dica {
+  #aviso-chamar {
     position: fixed;
     left: 50%;
     bottom: 24px;
@@ -139,6 +139,13 @@
     text-align: center;
     padding: 16px;
   }
+  /* A cara do José não mostra mensagens de texto (o que ele ouviu, velocidade, dicas, fases da conversa).
+     Para ver, abra com ?debug=1 (ex.: http://localhost:8090/?debug=1) */
+  body:not(.debug) #transcricao,
+  body:not(.debug) #velocidade,
+  body:not(.debug) #fase,
+  body:not(.debug) #dica,
+  body:not(.debug) #aviso-chamar { display: none !important; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -157,7 +164,7 @@
 </div>
 <div id="transcricao"></div>
 <div id="velocidade"></div>
-<div id="dica" hidden></div>
+<div id="aviso-chamar" hidden></div>
 <div id="aviso">José não está respondendo.<br>Rode: python voz/jose.py</div>
 
 <script>
@@ -199,6 +206,8 @@
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   });
 
+  if (new URLSearchParams(location.search).has('debug')) document.body.classList.add('debug');
+
   let estadoAnterior = null;
 
   const mostrar = (e) => {
@@ -232,8 +241,8 @@
 
     $('transcricao').textContent = e.transcricao;
     $('velocidade').textContent = e.velocidade;
-    $('dica').textContent = e.dica || '';
-    $('dica').hidden = !e.dica;
+    $('aviso-chamar').textContent = e.dica || '';
+    $('aviso-chamar').hidden = !e.dica;
   };
 
   const atualizar = async () => {
