@@ -1,0 +1,45 @@
+# Parâmetros do robô omni de 3 rodas (RAS).
+# Valores marcados com CALIBRAR são chutes até medir no robô real (ver README.md).
+
+omni_kinematics:
+  ros__parameters:
+    # Posição de cada roda em graus, a partir da frente (+x), anti-horário.
+    # [M1, M2, M3] = [atrás-esquerda, frente, atrás-direita], deduzido dos vetores do ras-2.0
+    # (frente = +,0,-  e  giro horário = +,+,+). Confirme com as rodas fora do chão.
+    wheel_angles_deg: [120.0, 0.0, 240.0]
+    # Polaridade de cada motor (+1/-1). Se UMA roda gira ao contrário, troque só o sinal dela.
+    wheel_signs: [-1.0, -1.0, -1.0]
+    robot_radius: 0.20        # m, centro do robô até o ponto de contato da roda    (CALIBRAR)
+    max_wheel_speed: 0.50     # m/s da roda com PWM 255                               (CALIBRAR)
+    deadband_pwm: 0           # menor PWM que faz o motor girar (ex.: 40)             (CALIBRAR)
+    max_pwm: 255              # teto de segurança; baixe (ex.: 150) nos primeiros testes
+    max_wheel_accel: 1.0      # m/s² por roda; 0 desliga a rampa
+    cmd_vel_timeout: 0.5      # s sem /cmd_vel -> para
+    control_rate: 20.0        # Hz
+
+arduino_bridge:
+  ros__parameters:
+    port: /dev/ttyACM0        # sobrescrito pelo argumento port:= do launch
+    baud_rate: 9600           # igual ao Serial.begin() do sketch
+    arduino_reset_delay: 2.0  # s; abrir a serial reseta o Arduino
+    max_send_rate: 10.0       # Hz; o sketch responde ~50 bytes por comando a 9600 baud
+    keepalive_period: 0.5     # s; reenvia o último comando mesmo sem mudança
+    input_timeout: 0.5        # s sem /wheel_pwm -> manda 0,0,0
+    reconnect_period: 2.0     # s entre tentativas de reconexão
+    log_arduino_replies: false
+
+# Odometria simulada (nav2_loopback_sim portado para o Humble no fork:
+# ros2_ws/src/navigation2, branch humble-ras-ports)
+loopback_simulator:
+  ros__parameters:
+    update_duration: 0.02
+    enable_stamped_cmd_vel: false   # applied_cmd_vel é Twist (no loopback 1.4.0 o padrão é true)
+    base_frame_id: base_link
+    odom_frame_id: odom
+    map_frame_id: map
+    scan_frame_id: base_scan
+    publish_map_odom_tf: true
+    publish_clock: false      # robô real: relógio de parede, sem use_sim_time
+    # Adição do port: começa já "localizado" sem precisar do 2D Pose Estimate do RViz
+    set_initial_pose_on_start: true
+    initial_pose: [0.0, 0.0, 0.0]   # x, y, yaw no frame map
