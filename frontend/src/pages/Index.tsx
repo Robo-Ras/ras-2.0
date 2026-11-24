@@ -191,6 +191,12 @@ const Index = () => {
     }
   };
 
+  const handleKeyPwm = (key: string, pwm: number[] | null) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'set_key_pwm', key, pwm }));
+    }
+  };
+
   const handleCalibrationReset = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'reset_calibration' }));
   };
@@ -347,6 +353,7 @@ const Index = () => {
             <CalibrationCard
               calibration={calibration}
               onChange={handleCalibrationChange}
+              onKeyPwm={handleKeyPwm}
               onReset={handleCalibrationReset}
               disabled={!isConnected}
             />

@@ -84,6 +84,21 @@ class OitoDirecoesTest(unittest.TestCase):
             angle, _ = heading(k.numpad_vector(key, 60))
             self.assertLess(abs(angle_error(angle, IDEAL_ANGLE[key])), 20.0, f"tecla {key}: {angle:.1f}°")
 
+    def test_a_roda_que_precisa_ajudar_nunca_fica_parada(self):
+        # No robô real, a diagonal 9 com a roda M1 zerada (só uma roda de trás empurrando) girava muito: o robô
+        # pivota. A 7 e a 3, onde a roda pequena foi elevada a 50, saíam certas.
+        self.assertEqual(k.numpad_vector(9, 60), (50, 50, -97))
+        self.assertEqual(k.numpad_vector(1, 60), (-50, -50, 97))
+
+    def test_diagonais_espelhadas_sao_espelhos(self):
+        # 9 é a 7 refletida (esquerda<->direita): m1' = -m3, m2' = -m2, m3' = -m1 (os motores têm sentido horário)
+        m1, m2, m3 = k.numpad_vector(7, 60)
+        e1, e2, e3 = k.numpad_vector(9, 60)
+        self.assertEqual((e1, e2), (-m3, -m2))  # 50 e 50
+        self.assertLessEqual(abs(abs(e3) - abs(m1) * 1.1), 2)  # a roda esquerda é ~10% mais forte
+        self.assertEqual(k.numpad_vector(1, 60), tuple(-v for v in k.numpad_vector(9, 60)))
+        self.assertEqual(k.numpad_vector(3, 60), tuple(-v for v in k.numpad_vector(7, 60)))
+
     def test_oposta_e_o_contrario(self):
         for a, b in ((8, 2), (4, 6), (7, 3), (9, 1)):
             self.assertEqual(tuple(-x for x in k.numpad_vector(a, 60)), k.numpad_vector(b, 60) if a in (8, 4) else tuple(-x for x in k.numpad_vector(a, 60)))
@@ -132,16 +147,56 @@ class OitoDirecoesTest(unittest.TestCase):
         self.assertIsNone(k.direction_vector('voar', 60))
 
 
+class AjusteManualPorTeclaTest(unittest.TestCase):
+    def cal(self, **teclas):
+        return k.Calibration(teclas=teclas).validate()
+
+    def test_valor_manual_vale_no_lugar_da_conta(self):
+        cal = self.cal(**{'4': [50, -80, 50]})
+        self.assertEqual(k.numpad_vector(4, 60, cal), (50, -80, 50))
+        self.assertEqual(k.numpad_vector(6, 60, cal), k.numpad_vector(6, 60))  # as outras seguem a cinemática
+
+    def test_vale_tambem_para_voz_e_autonomo(self):
+        cal = self.cal(**{'8': [60, 0, -90]})
+        self.assertEqual(k.direction_vector('forward', 60, cal), (60, 0, -90))
+        self.assertEqual(k.direction_vector('backward', 60, cal), k.direction_vector('backward', 60))
+
+    def test_escala_com_a_velocidade(self):
+        cal = self.cal(**{'4': [50, -80, 50]})
+        a, b, c = k.numpad_vector(4, 100, cal)
+        self.assertEqual((a, b, c), (83, -133, 83))  # x 100/60
+        for v in k.numpad_vector(4, 100, cal):
+            self.assertLessEqual(abs(v), k.HARD_MAX_PWM)
+
+    def test_valores_invalidos_sao_recusados(self):
+        for bad in ({'4': [30, -80, 50]}, {'4': [50, -120, 50]}, {'4': [50, -80]}, {'x': [50, 50, 50]}, {'5': [50, 50, 50]}):
+            with self.assertRaises(ValueError):
+                k.Calibration(teclas=bad).validate()
+        k.Calibration(teclas={'4': [0, -80, 50]}).validate()  # zero é permitido (roda parada)
+
+    def test_salva_e_carrega_os_ajustes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'cal.json')
+            k.Calibration(teclas={'4': [50, -80, 50]}).save(path)
+            self.assertEqual(k.Calibration.load(path).teclas, {'4': [50, -80, 50]})
+
+    def test_tabela_mostra_o_que_cada_tecla_envia(self):
+        tabela = k.key_table(60, self.cal(**{'4': [50, -80, 50]}))
+        self.assertEqual(tabela['4'], [50, -80, 50])
+        self.assertEqual(tabela['8'], list(k.numpad_vector(8, 60)))
+        self.assertEqual(set(tabela), set(k.TUNABLE_KEYS))
+
+
 class CalibracaoTest(unittest.TestCase):
     def test_correcao_lateral_empurra_para_a_direita(self):
         base, _ = heading(k.compose(1, 0, 0, 60, k.Calibration()))
         com, _ = heading(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=0.15)))
         self.assertLess(com, base - 1.5)  # mais negativo = mais para a direita
-        # Limite físico: ao andar para frente a roda da frente (a que anda de lado) está em 0 e a correção pediria
-        # dela menos que o PWM mínimo (50): ela não gira, em nenhum valor permitido. Só as rodas de trás corrigem;
-        # o efeito é menor que o teórico (atan 0,15 = 8,5°) e vem com um pouco de giro.
-        for c in (0.15, 0.3, 0.5):
-            self.assertEqual(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=c))[1], 0, c)
+        # A roda da frente (a que anda de lado) está em 0 ao andar para frente; uma correção pequena pediria dela menos
+        # que ZERO_BAND_PWM e ela continua parada. Só as rodas de trás corrigem (efeito menor que o teórico, com um
+        # pouco de giro). A partir de ~0,25 a roda da frente liga de uma vez, no mínimo que gira (50).
+        self.assertEqual(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=0.15))[1], 0)
+        self.assertEqual(abs(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=0.3))[1]), 50)
 
     def test_correcao_de_giro(self):
         _, base = heading(k.compose(1, 0, 0, 60, k.Calibration()))

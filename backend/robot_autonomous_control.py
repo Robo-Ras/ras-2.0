@@ -831,10 +831,33 @@ class WebSocketServer:
                     ganhos=data.get('ganhos', cal.ganhos),
                     correcao_lateral=data.get('correcao_lateral', cal.correcao_lateral),
                     correcao_giro=data.get('correcao_giro', cal.correcao_giro),
+                    teclas=data.get('teclas', cal.teclas),
                 ).validate()
             except (ValueError, TypeError) as e:
                 await self.send_to_all({'type': 'calibration_error', 'error': str(e)})
                 await self.send_to_all(self.calibration_message())  # a tela volta ao valor válido
+                return
+            self.robot.calibration = new
+            new.save()
+            await self.send_to_all(self.calibration_message())
+
+        elif cmd_type == 'set_key_pwm':
+            # Ajuste à mão do PWM de UMA tecla (nível 60): {key: '4', pwm: [m1, m2, m3]}; pwm = null volta à conta
+            cal = self.robot.calibration
+            teclas = dict(cal.teclas)
+            key = str(data.get('key'))
+            if data.get('pwm') is None:
+                teclas.pop(key, None)
+            else:
+                teclas[key] = data['pwm']
+            try:
+                if key not in kinematics.TUNABLE_KEYS:
+                    raise ValueError(f'tecla inválida: {key!r}')
+                new = kinematics.Calibration(ganhos=cal.ganhos, correcao_lateral=cal.correcao_lateral,
+                                             correcao_giro=cal.correcao_giro, teclas=teclas).validate()
+            except (ValueError, TypeError) as e:
+                await self.send_to_all({'type': 'calibration_error', 'error': str(e)})
+                await self.send_to_all(self.calibration_message())
                 return
             self.robot.calibration = new
             new.save()
@@ -868,7 +891,9 @@ class WebSocketServer:
 
     def calibration_message(self):
         cal = self.robot.calibration
-        return {'type': 'calibration', **cal.to_dict(), 'limites': {
+        return {'type': 'calibration', **cal.to_dict(),
+                'tabela': kinematics.key_table(kinematics.BASE_LEVEL, cal),  # o que cada tecla envia no nível 60
+                'limites': {
             'pwm_min_base': kinematics.PWM_MIN_BASE, 'pwm_max_base': kinematics.PWM_MAX_BASE,
             'nivel_base': kinematics.BASE_LEVEL, 'nivel_min': kinematics.LEVEL_MIN, 'nivel_max': kinematics.LEVEL_MAX,
             'razao_max_ganhos': kinematics.MAX_GAIN_RATIO, 'pwm_teto': kinematics.HARD_MAX_PWM,

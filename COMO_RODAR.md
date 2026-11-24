@@ -139,11 +139,11 @@ Valores que o sistema envia com a calibração inicial:
 | Tecla | Direção | M1 (trás-esq.) | M2 (frente) | M3 (trás-dir.) | velocidade 100: M1 / M2 / M3 |
 |-------|---------|---:|---:|---:|---|
 | `8` | ↑ frente | 79 | 0 | -87 | 131 / 0 / -144 |
-| `9` | ↗ frente-direita | 0 | 50 | -97 | 50 / 59 / -161 |
+| `9` | ↗ frente-direita | 50 | 50 | -97 | 50 / 59 / -161 |
 | `6` | → direita | -50 | 50 | -50 | -76 / 83 / -83 |
 | `3` | ↘ trás-direita | -88 | 50 | 50 | -146 / 59 / 50 |
 | `2` | ↓ trás | -79 | 0 | 87 | -131 / 0 / 144 |
-| `1` | ↙ trás-esquerda | 0 | -50 | 97 | -50 / -59 / 161 |
+| `1` | ↙ trás-esquerda | -50 | -50 | 97 | -50 / -59 / 161 |
 | `4` | ← esquerda | 50 | -50 | 50 | 76 / -83 / 83 |
 | `7` | ↖ frente-esquerda | 88 | -50 | -50 | 146 / -59 / -50 |
 | `cw` | ↻ giro horário | 91 | 50 | 100 | 152 / 83 / 167 |
@@ -161,9 +161,18 @@ Os valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 =
    - **curva em vez de ir reto**: **correção de giro** (positivo = gira horário).
 3. Repita com `2` (trás).
 4. **Lados** (`4` e `6`): se ele ainda vai para frente/trás enquanto anda de lado, é a proporção **M1 contra M3**; se ele gira andando de lado, é a força de **M2 (frente)** contra M1 e M3.
-5. **Diagonais** (`7 9 1 3`): são as mais sensíveis. No nível 60 algumas ficam até ~15° tortas, porque o menor PWM que o motor aceita é 50 e a conta pede menos. Em velocidade maior ficam mais certas.
+5. **Diagonais** (`7 9 1 3`): são as mais sensíveis. A `9` e a `1` são o espelho da `7` e da `3`: uma roda que só precisa ajudar um pouco **recebe o mínimo (50) e não fica parada**, porque com só uma roda de trás empurrando o robô pivota (era o giro grande da `9` e da `1`).
 
-**Limites que valem saber:** a correção lateral ao andar para frente/trás só atua pelas rodas de trás (a da frente não gira com menos de 50), então é fina mas vem com um pouco de giro. A diferença máxima de força entre motores é **2:1** (o cartão recusa mais que isso).
+### Ajustar uma tecla na mão (tabela *Valores por tecla*)
+
+A estimativa de força dos motores não acerta tudo. Para acertar **uma tecla na prática**, edite os três valores dela no cartão (M1 M2 M3): vale na hora, escala com a velocidade, fica gravado em `backend/calibracao_robo.json` e a linha vira **manual** (o ícone ↺ volta à conta). Vale também para a voz e o modo autônomo. Cada motor: 0 ou de 50 a 100 (nível 60).
+
+Como ler o que o robô faz:
+- **Anda de lado (`4`/`6`) mas gira junto (arco aberto):** a soma dos três motores, nos sentidos em que empurram, não dá zero. Gira no sentido horário → reduza M1 e M3 (ou suba o módulo de M2); anti-horário → o contrário.
+- **Anda para frente/trás (`8`/`2`) puxando para um lado:** é a proporção entre M1 e M3 (hoje `79 : 87`). Puxa para a esquerda → reduza o módulo de M1 (ou suba o de M3).
+- Anote os valores que ficaram bons e me passe: eu coloco como padrão.
+
+**Limites que valem saber:** a correção lateral ao andar para frente/trás só liga a roda da frente a partir de ~25% (ela não gira com menos de 50), então abaixo disso ela atua só pelas rodas de trás. A diferença máxima de força entre motores é **2:1** (o cartão recusa mais que isso).
 
 ### Freio ao trocar de direção
 

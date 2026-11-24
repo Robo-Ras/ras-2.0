@@ -392,6 +392,33 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             volta = await c.wait_for('calibration', lambda m: m['ganhos'] == list(kinematics.DEFAULT_GAINS))
             self.assertEqual(volta['correcao_lateral'], 0.0)
 
+    async def test_per_key_pwm_can_be_tuned_live_and_is_used_by_the_key(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            cal = await c.wait_for('calibration')
+            self.assertEqual(cal['tabela']['4'], list(kinematics.numpad_vector(4, 60)))  # a tela mostra o valor atual
+            await c.send(type='set_key_pwm', key='4', pwm=[50, -80, 50])
+            novo = await c.wait_for('calibration', lambda m: m['teclas'] == {'4': [50, -80, 50]})
+            self.assertEqual(novo['tabela']['4'], [50, -80, 50])
+            await c.send(type='drive', key=4, speed=60)
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, (50, -80, 50))
+            await c.send(type='drive', key=5)
+            self.assertEqual(kinematics.Calibration.load().teclas, {'4': [50, -80, 50]})  # ficou gravado
+            await c.send(type='set_key_pwm', key='4', pwm=None)  # volta à conta
+            volta = await c.wait_for('calibration', lambda m: m['teclas'] == {})
+            self.assertEqual(volta['tabela']['4'], list(kinematics.numpad_vector(4, 60)))
+
+    async def test_invalid_per_key_pwm_is_refused(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('calibration')
+            for key, pwm in (('4', [20, -80, 50]), ('4', [50, -150, 50]), ('5', [50, 50, 50]), ('x', [50, 50, 50])):
+                await c.send(type='set_key_pwm', key=key, pwm=pwm)
+                await c.wait_for('calibration_error')
+                atual = await c.wait_for('calibration')
+                self.assertEqual(atual['teclas'], {})  # nada foi gravado
+
     async def test_invalid_calibration_is_refused_and_the_screen_gets_the_valid_one_back(self):
         async with self.connect() as ws:
             c = Client(ws)
