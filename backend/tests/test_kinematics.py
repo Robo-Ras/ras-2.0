@@ -181,6 +181,16 @@ class RoboRealTest(unittest.TestCase):
         self.assertEqual(k.numpad_vector(9, 60, tuned), (50, 67, -97))
         self.assertEqual(k.numpad_vector(1, 60, tuned), (-50, -67, 97))
 
+    def test_velocidade_e_regra_de_tres_em_todas_as_teclas(self):
+        # nível 60 -> nível L: cada motor x L/60 (só o arredondamento para inteiro de diferença)
+        tuned = k.Calibration.tuned()
+        for key in ('1', '2', '3', '4', '6', '7', '8', '9', 'cw', 'ccw'):
+            arg = key if key.isalpha() else int(key)
+            base = k.numpad_vector(arg, 60, tuned)
+            for level in range(60, 101, 5):
+                for got, b in zip(k.numpad_vector(arg, level, tuned), base):
+                    self.assertAlmostEqual(got, b * level / 60, delta=0.5, msg=f"{key} nível {level}")
+
     def test_vale_para_voz_e_autonomo_e_escala_com_a_velocidade(self):
         tuned = k.Calibration.tuned()
         self.assertEqual(k.direction_vector('forward', 60, tuned), (67, 0, -59))
