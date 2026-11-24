@@ -20,7 +20,7 @@ export interface Calibration {
 interface CalibrationCardProps {
   calibration?: Calibration;
   onChange: (change: Partial<Pick<Calibration, "ganhos" | "correcao_lateral" | "correcao_giro">>) => void;
-  onKeyPwm: (key: string, pwm: number[] | null) => void; // null: volta à conta da cinemática
+  onKeyPwm: (key: string, pwm: number[] | null, mirror: boolean) => void; // null: volta à conta; mirror: também na tecla oposta
   onReset: () => void;
   disabled: boolean;
 }
@@ -43,6 +43,7 @@ export const CalibrationCard = ({ calibration, onChange, onKeyPwm, onReset, disa
   const [lateral, setLateral] = useState(calibration?.correcao_lateral ?? 0);
   const [spin, setSpin] = useState(calibration?.correcao_giro ?? 0);
   const [table, setTable] = useState<Record<string, string[]>>({});
+  const [mirror, setMirror] = useState(false); // ao editar uma tecla, põe o inverso na tecla oposta (8 ↔ 2, 4 ↔ 6...)
 
   // O backend é quem manda o valor válido (também depois de um valor recusado)
   useEffect(() => {
@@ -61,7 +62,7 @@ export const CalibrationCard = ({ calibration, onChange, onKeyPwm, onReset, disa
     const now = (table[key] ?? []).map((v) => Number(v));
     const cur = calibration?.tabela?.[key];
     if (now.length === 3 && now.every((v) => Number.isFinite(v)) && cur && now.some((v, i) => v !== cur[i])) {
-      onKeyPwm(key, now);
+      onKeyPwm(key, now, mirror);
     }
   };
 
@@ -141,7 +142,13 @@ export const CalibrationCard = ({ calibration, onChange, onKeyPwm, onReset, disa
               O que cada tecla envia aos motores. Edite um valor para acertar aquela tecla na prática: vale na hora, escala
               com a velocidade e fica gravado. Cada motor: 0 ou de {lim?.pwm_min_base ?? 50} a {lim?.pwm_max_base ?? 100}.
               Ao mexer, a linha vira <span className="font-semibold">manual</span>; <RotateCcw className="inline h-3 w-3" /> volta à conta.
+              Teclas <span className="font-semibold">manual</span> ignoram a força dos motores e as correções acima.
+              A frente (8) e a trás (2) já vêm acertadas no robô.
             </p>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={mirror} onChange={(e) => setMirror(e.target.checked)} />
+              Ao editar, pôr o <span className="font-medium">inverso</span> na tecla oposta (8↔2, 4↔6, 7↔3, 9↔1, Q↔E)
+            </label>
             <div className="grid grid-cols-[3.5rem_repeat(3,minmax(0,1fr))_1.75rem] items-center gap-1.5 text-[11px] text-muted-foreground">
               <span />
               <span className="text-center">M1</span>
@@ -174,7 +181,7 @@ export const CalibrationCard = ({ calibration, onChange, onKeyPwm, onReset, disa
                     className="flex h-8 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-30"
                     disabled={disabled || !manual}
                     title="Voltar ao valor da conta"
-                    onClick={() => onKeyPwm(key, null)}
+                    onClick={() => onKeyPwm(key, null, mirror)}
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>

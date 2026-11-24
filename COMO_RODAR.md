@@ -138,11 +138,11 @@ Valores que o sistema envia com a calibração inicial:
 
 | Tecla | Direção | M1 (trás-esq.) | M2 (frente) | M3 (trás-dir.) | velocidade 100: M1 / M2 / M3 |
 |-------|---------|---:|---:|---:|---|
-| `8` | ↑ frente | 79 | 0 | -87 | 131 / 0 / -144 |
+| `8` | ↑ frente (**acertada no robô**) | 67 | 0 | -59 | 112 / 0 / -98 |
 | `9` | ↗ frente-direita | 50 | 50 | -97 | 50 / 59 / -161 |
 | `6` | → direita | -50 | 50 | -50 | -76 / 83 / -83 |
 | `3` | ↘ trás-direita | -88 | 50 | 50 | -146 / 59 / 50 |
-| `2` | ↓ trás | -79 | 0 | 87 | -131 / 0 / 144 |
+| `2` | ↓ trás (**o inverso da frente**) | -67 | 0 | 59 | -112 / 0 / 98 |
 | `1` | ↙ trás-esquerda | -50 | -50 | 97 | -50 / -59 / 161 |
 | `4` | ← esquerda | 50 | -50 | 50 | 76 / -83 / 83 |
 | `7` | ↖ frente-esquerda | 88 | -50 | -50 | 146 / -59 / -50 |
@@ -153,7 +153,9 @@ Valores que o sistema envia com a calibração inicial:
 
 ### Calibrar na prática (cartão *Calibração dos motores* no painel)
 
-Os valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 = 1,00` (só a proporção importa). Cada ajuste vale na hora e fica gravado em `backend/calibracao_robo.json`.
+**Já acertado no robô:** a **frente** (`8` = `67, 0, -59`) foi achada na prática, e a **trás** (`2`) é o **inverso exato** dela. As duas ficam gravadas como valores por tecla (marcadas *manual*). Mexer na força dos motores e nas correções globais para acertar a frente piorou todas as outras teclas, por isso o ajuste ficou só nessas duas. O **lado** (`4`/`6`) ainda vai ser calculado.
+
+Os outros valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 = 1,00` (só a proporção importa). Cada ajuste vale na hora e fica gravado em `backend/calibracao_robo.json`.
 
 1. **Rodas fora do chão** (robô levantado), botão de parada física à mão. Aperte cada tecla e confira que **as rodas certas giram no sentido certo** (a tabela acima): `8` = M1 e M3 (M2 parada); `6` e `4` = as três; `5` para tudo.
 2. **No chão**, em espaço livre, nível 60, tecla `8` por uns 2 s:
@@ -165,7 +167,7 @@ Os valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 =
 
 ### Ajustar uma tecla na mão (tabela *Valores por tecla*)
 
-A estimativa de força dos motores não acerta tudo. Para acertar **uma tecla na prática**, edite os três valores dela no cartão (M1 M2 M3): vale na hora, escala com a velocidade, fica gravado em `backend/calibracao_robo.json` e a linha vira **manual** (o ícone ↺ volta à conta). Vale também para a voz e o modo autônomo. Cada motor: 0 ou de 50 a 100 (nível 60).
+A estimativa de força dos motores não acerta tudo. Para acertar **uma tecla na prática**, edite os três valores dela no cartão (M1 M2 M3): vale na hora, escala com a velocidade, fica gravado em `backend/calibracao_robo.json` e a linha vira **manual** (o ícone ↺ volta à conta). Vale também para a voz e o modo autônomo; teclas *manual* ignoram a força dos motores e as correções globais. A opção **inverso na tecla oposta** põe, ao editar uma tecla, o valor com o sinal trocado na tecla oposta (como foi feito da frente para a trás). Cada motor: 0 ou de 50 a 100 (nível 60). O simulador (`--sim`) não usa nem grava esses ajustes.
 
 Como ler o que o robô faz:
 - **Anda de lado (`4`/`6`) mas gira junto (arco aberto):** a soma dos três motores, nos sentidos em que empurram, não dá zero. Gira no sentido horário → reduza M1 e M3 (ou suba o módulo de M2); anti-horário → o contrário.

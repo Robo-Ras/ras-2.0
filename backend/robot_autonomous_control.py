@@ -466,7 +466,9 @@ class RobotController:
         self.reserved_ports = set()  # portas em uso por outros sensores (LiDAR)
         self.last_vec = (0, 0, 0)  # último comando enviado aos motores (o freio parte dele)
         self.last_sent = 0.0  # quando foi escrito na serial (repetições iguais não são reenviadas toda hora)
-        self.calibration = kinematics.Calibration.load()  # força de cada motor e correções para andar reto
+        # Força de cada motor e ajustes das teclas. O robô simulado é a cinemática pura: não usa o que foi acertado
+        # no robô de verdade (senão a frente "acertada" para os motores reais desviaria no simulador)
+        self.calibration = kinematics.Calibration() if sim_world is not None else kinematics.Calibration.load()
 
     def connect(self, port):
         """Conecta ao Arduino"""
@@ -654,6 +656,10 @@ class WebSocketServer:
         self.last_navigation = None
         self.voice_task = None  # movimento curto disparado por comando de voz
         self.voice_last_move = -1e9  # quando o último comando de voz de movimento foi aceito
+        # Calibração do robô de verdade: grava em calibracao_robo.json. No simulador (--sim) não grava e começa na
+        # cinemática pura, para brincar na tela não sobrescrever os valores acertados no robô.
+        self.persist_calibration = True
+        self.default_calibration = kinematics.Calibration.tuned
         self.brake_task = None  # freio suave do controle manual (soltar o botão, trocar de direção)
         self.pending_vec = None  # movimento pedido durante a freada: começa quando ela acabar
         self.hold_deadline = None  # movimento "segurando" (celular): para se o comando não for renovado
@@ -838,7 +844,7 @@ class WebSocketServer:
                 await self.send_to_all(self.calibration_message())  # a tela volta ao valor válido
                 return
             self.robot.calibration = new
-            new.save()
+            self.save_calibration()
             await self.send_to_all(self.calibration_message())
 
         elif cmd_type == 'set_key_pwm':
@@ -846,10 +852,18 @@ class WebSocketServer:
             cal = self.robot.calibration
             teclas = dict(cal.teclas)
             key = str(data.get('key'))
+            opposite = kinematics.OPPOSITE_KEY.get(key) if data.get('espelhar') else None
             if data.get('pwm') is None:
                 teclas.pop(key, None)
+                if opposite:
+                    teclas.pop(opposite, None)
             else:
                 teclas[key] = data['pwm']
+                if opposite:  # a tecla oposta recebe o inverso (cada motor com o sinal trocado)
+                    try:
+                        teclas[opposite] = [-int(round(v)) for v in data['pwm']]
+                    except (TypeError, ValueError):
+                        pass  # o valor ruim é recusado na validação abaixo
             try:
                 if key not in kinematics.TUNABLE_KEYS:
                     raise ValueError(f'tecla inválida: {key!r}')
@@ -860,12 +874,12 @@ class WebSocketServer:
                 await self.send_to_all(self.calibration_message())
                 return
             self.robot.calibration = new
-            new.save()
+            self.save_calibration()
             await self.send_to_all(self.calibration_message())
 
         elif cmd_type == 'reset_calibration':
-            self.robot.calibration = kinematics.Calibration()
-            self.robot.calibration.save()
+            self.robot.calibration = self.default_calibration()
+            self.save_calibration()
             await self.send_to_all(self.calibration_message())
 
         elif cmd_type == 'set_autonomous':
@@ -888,6 +902,10 @@ class WebSocketServer:
 
         elif cmd_type == 'robot_face_heartbeat':
             self.tablet_connected = True
+
+    def save_calibration(self):
+        if self.persist_calibration:
+            self.robot.calibration.save()
 
     def calibration_message(self):
         cal = self.robot.calibration
@@ -1284,6 +1302,9 @@ def build_system(args):
     if lidar is not None and lidar.port and lidar.port != 'SIM':
         robot.reserved_ports.add(lidar.port)
     server = WebSocketServer(robot, sensor_manager, ObstacleDetector(), AutonomousNavigator())
+    if args.sim:
+        server.persist_calibration = False  # mexer na calibração do simulador não toca no arquivo do robô
+        server.default_calibration = kinematics.Calibration
     return server, world
 
 

@@ -191,9 +191,9 @@ const Index = () => {
     }
   };
 
-  const handleKeyPwm = (key: string, pwm: number[] | null) => {
+  const handleKeyPwm = (key: string, pwm: number[] | null, espelhar: boolean) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'set_key_pwm', key, pwm }));
+      wsRef.current.send(JSON.stringify({ type: 'set_key_pwm', key, pwm, espelhar }));
     }
   };
 

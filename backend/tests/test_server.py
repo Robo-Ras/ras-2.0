@@ -371,7 +371,34 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.world.wheels, kinematics.numpad_vector(8, 60))
             await c.send(type='drive', key=5)
 
+    async def test_simulator_calibration_never_touches_the_robot_file(self):
+        # No --sim, mexer na calibração não grava o arquivo do robô de verdade, e o "padrão" é a cinemática pura
+        self.assertFalse(self.server.persist_calibration)
+        async with self.connect() as ws:
+            c = Client(ws)
+            cal = await c.wait_for('calibration')
+            self.assertEqual(cal['teclas'], {})  # sem a frente/trás acertadas no robô real
+            await c.send(type='set_calibration', ganhos=[1.3, 1.8, 1.0])
+            await c.wait_for('calibration', lambda m: m['ganhos'] == [1.3, 1.8, 1.0])
+            self.assertFalse(os.path.exists(kinematics.CALIBRATION_FILE))  # nada foi gravado
+            await c.send(type='reset_calibration')
+            volta = await c.wait_for('calibration', lambda m: m['ganhos'] == list(kinematics.DEFAULT_GAINS))
+            self.assertEqual(volta['teclas'], {})
+
+    async def test_mirroring_a_key_sets_the_inverse_on_the_opposite_key(self):
+        self.server.persist_calibration = True
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('calibration')
+            await c.send(type='set_key_pwm', key='4', pwm=[50, -80, 60], espelhar=True)
+            cal = await c.wait_for('calibration', lambda m: '6' in m['teclas'])
+            self.assertEqual(cal['teclas'], {'4': [50, -80, 60], '6': [-50, 80, -60]})
+            await c.send(type='set_key_pwm', key='4', pwm=None, espelhar=True)  # voltar tira os dois
+            vazio = await c.wait_for('calibration', lambda m: m['teclas'] == {})
+            self.assertEqual(vazio['tabela']['6'], list(kinematics.numpad_vector(6, 60)))
+
     async def test_calibration_is_sent_on_connect_and_changes_live(self):
+        self.server.persist_calibration = True  # o teste confere o arquivo
         async with self.connect() as ws:
             c = Client(ws)
             cal = await c.wait_for('calibration')
@@ -393,6 +420,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(volta['correcao_lateral'], 0.0)
 
     async def test_per_key_pwm_can_be_tuned_live_and_is_used_by_the_key(self):
+        self.server.persist_calibration = True  # o teste confere o arquivo
         async with self.connect() as ws:
             c = Client(ws)
             cal = await c.wait_for('calibration')

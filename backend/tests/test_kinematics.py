@@ -147,6 +147,42 @@ class OitoDirecoesTest(unittest.TestCase):
         self.assertIsNone(k.direction_vector('voar', 60))
 
 
+class RoboRealTest(unittest.TestCase):
+    """O que foi acertado no robô de verdade: a frente, e a trás como o inverso exato dela."""
+
+    def test_frente_acertada_na_pratica(self):
+        self.assertEqual(k.numpad_vector(8, 60, k.Calibration.tuned()), (67, 0, -59))
+
+    def test_tras_e_o_inverso_exato_da_frente(self):
+        tuned = k.Calibration.tuned()
+        self.assertEqual(k.numpad_vector(2, 60, tuned), tuple(-v for v in k.numpad_vector(8, 60, tuned)))
+
+    def test_as_outras_teclas_seguem_a_cinematica_pura(self):
+        # Mexer nos ganhos globais para acertar a frente piorou o resto (a 7 virava uma roda zerada)
+        tuned, theory = k.Calibration.tuned(), k.Calibration()
+        for key in (4, 6, 7, 9, 1, 3, 'cw', 'ccw'):
+            self.assertEqual(k.numpad_vector(key, 60, tuned), k.numpad_vector(key, 60, theory), key)
+        self.assertEqual((tuned.ganhos, tuned.correcao_lateral, tuned.correcao_giro), (list(k.DEFAULT_GAINS), 0.0, 0.0))
+
+    def test_vale_para_voz_e_autonomo_e_escala_com_a_velocidade(self):
+        tuned = k.Calibration.tuned()
+        self.assertEqual(k.direction_vector('forward', 60, tuned), (67, 0, -59))
+        self.assertEqual(k.direction_vector('backward', 100, tuned), (-112, 0, 98))  # x 100/60, ainda o inverso
+
+    def test_sem_arquivo_vale_o_robo_real(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(k.Calibration.load(os.path.join(tmp, 'nao-existe.json')).teclas, k.Calibration.tuned().teclas)
+
+    def test_o_arquivo_do_projeto_e_o_robo_real(self):
+        self.assertEqual(k.Calibration.load().to_dict(), k.Calibration.tuned().to_dict())
+
+    def test_cada_tecla_tem_sua_oposta(self):
+        for key, other in k.OPPOSITE_KEY.items():
+            self.assertEqual(k.OPPOSITE_KEY[other], key)
+            self.assertEqual(k.numpad_vector(other if other.isalpha() else int(other), 60),
+                             tuple(-v for v in k.numpad_vector(key if key.isalpha() else int(key), 60)), key)
+
+
 class AjusteManualPorTeclaTest(unittest.TestCase):
     def cal(self, **teclas):
         return k.Calibration(teclas=teclas).validate()

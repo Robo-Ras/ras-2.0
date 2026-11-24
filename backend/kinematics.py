@@ -79,6 +79,16 @@ CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cal
 # o da esquerda "um pouco" mais forte que o da direita). A calibração na prática ajusta isso (veja COMO_RODAR.md).
 DEFAULT_GAINS = (1.10, 2.00, 1.00)
 
+# Valores acertados no robô de verdade (nível 60), que valem no lugar da conta:
+#  - frente: achada na prática (ajuste dos controles até ir quase reto);
+#  - trás: o INVERSO exato da frente.
+# As outras teclas seguem a cinemática: mexer nos ganhos e correções globais para acertar a frente piorou todas
+# as demais (a 7 virava uma roda zerada), então só estas duas teclas guardam o ajuste.
+TUNED_KEYS = {'8': [67, 0, -59], '2': [-67, 0, 59]}
+
+# Tecla oposta (o inverso): andar para o lado contrário com os motores girando ao contrário
+OPPOSITE_KEY = {'8': '2', '2': '8', '4': '6', '6': '4', '7': '3', '3': '7', '9': '1', '1': '9', 'cw': 'ccw', 'ccw': 'cw'}
+
 
 @dataclass
 class Calibration:
@@ -116,6 +126,11 @@ class Calibration:
         self.correcao_giro = float(self.correcao_giro)
         return self
 
+    @classmethod
+    def tuned(cls):
+        """A calibração do robô de verdade: a cinemática mais as teclas acertadas na prática (frente e trás)."""
+        return cls(teclas={k: list(v) for k, v in TUNED_KEYS.items()})
+
     def to_dict(self):
         return {'ganhos': list(self.ganhos), 'correcao_lateral': self.correcao_lateral,
                 'correcao_giro': self.correcao_giro, 'teclas': {k: list(v) for k, v in self.teclas.items()}}
@@ -136,7 +151,7 @@ class Calibration:
                 data = json.load(f)
             return cls(**{k: data[k] for k in ('ganhos', 'correcao_lateral', 'correcao_giro', 'teclas') if k in data}).validate()
         except (OSError, ValueError, TypeError):
-            return cls()  # sem arquivo (ou inválido): valores iniciais
+            return cls.tuned()  # sem arquivo (ou inválido): a calibração acertada no robô
 
 
 def wheel_speeds(vx, vy, rot, cal=None):

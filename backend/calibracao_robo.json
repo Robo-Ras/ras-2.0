@@ -5,5 +5,17 @@
     1.0
   ],
   "correcao_lateral": 0.0,
-  "correcao_giro": 0.0
+  "correcao_giro": 0.0,
+  "teclas": {
+    "8": [
+      67,
+      0,
+      -59
+    ],
+    "2": [
+      -67,
+      0,
+      59
+    ]
+  }
 }
