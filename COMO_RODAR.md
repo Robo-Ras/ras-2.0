@@ -139,21 +139,21 @@ Valores que o sistema envia com a calibração inicial:
 | Tecla | Direção | M1 (trás-esq.) | M2 (frente) | M3 (trás-dir.) | velocidade 100: M1 / M2 / M3 |
 |-------|---------|---:|---:|---:|---|
 | `8` | ↑ frente (**acertada no robô**) | 67 | 0 | -59 | 112 / 0 / -98 |
-| `9` | ↗ frente-direita | 50 | 50 | -97 | 50 / 59 / -161 |
-| `6` | → direita | -50 | 50 | -50 | -76 / 83 / -83 |
+| `9` | ↗ frente-direita (**ajustada na prática**) | 50 | 50 | -97 | 83 / 83 / -162 |
+| `6` | → direita (**ajustada à mão**) | -50 | 95 | -50 | -83 / 158 / -83 |
 | `3` | ↘ trás-direita | -88 | 50 | 50 | -146 / 59 / 50 |
 | `2` | ↓ trás (**o inverso da frente**) | -67 | 0 | 59 | -112 / 0 / 98 |
-| `1` | ↙ trás-esquerda | -50 | -50 | 97 | -50 / -59 / 161 |
-| `4` | ← esquerda | 50 | -50 | 50 | 76 / -83 / 83 |
+| `1` | ↙ trás-esquerda (**inverso da 9**) | -50 | -50 | 97 | -83 / -83 / 162 |
+| `4` | ← esquerda (**ajustada à mão**) | 63 | -95 | 50 | 105 / -158 / 83 |
 | `7` | ↖ frente-esquerda | 88 | -50 | -50 | 146 / -59 / -50 |
-| `cw` | ↻ giro horário | 91 | 50 | 100 | 152 / 83 / 167 |
-| `ccw` | ↺ giro anti-horário | -91 | -50 | -100 | -152 / -83 / -167 |
+| `cw` | ↻ giro horário (**os três iguais**) | 60 | 60 | 60 | 100 / 100 / 100 |
+| `ccw` | ↺ giro anti-horário | -60 | -60 | -60 | -100 / -100 / -100 |
 
 **O que mudou em relação à tabela antiga:** "esquerda/direita" era `(0, ±s, ∓s)`, que zera uma roda e dá uma **diagonal** (e é o que você viu: o botão de lado ia para frente-direita / trás-esquerda). De lado de verdade, a roda da frente faz a força maior e as **duas de trás ajudam, metade cada, no sentido oposto**. Além disso, como os motores têm forças diferentes, o PWM de cada um é dividido pela sua força (motor forte recebe menos), o que compensa o desvio para a esquerda ao ir para frente/trás (o motor da esquerda é um pouco mais forte).
 
 ### Calibrar na prática (cartão *Calibração dos motores* no painel)
 
-**Já acertado no robô:** a **frente** (`8` = `67, 0, -59`) foi achada na prática, e a **trás** (`2`) é o **inverso exato** dela. As duas ficam gravadas como valores por tecla (marcadas *manual*). Mexer na força dos motores e nas correções globais para acertar a frente piorou todas as outras teclas, por isso o ajuste ficou só nessas duas. O **lado** (`4`/`6`) ainda vai ser calculado.
+**Já acertado no robô:** a **frente** (`8` = `67, 0, -59`) foi achada na prática, e a **trás** (`2`) é o **inverso exato** dela. As duas ficam gravadas como valores por tecla (marcadas *manual*). Mexer na força dos motores e nas correções globais para acertar a frente piorou todas as outras teclas, por isso o ajuste ficou só nessas duas. O **lado** (`4` e `6`) também foi ajustado à mão, cada um no seu sentido (os motores rendem diferente conforme o sentido, então um não é o inverso do outro). O **giro** (`Q`/`E`) tem os três motores com o mesmo valor, 60. A `9` foi ajustada na prática e a `1` é o inverso dela; só a `7` e a `3` seguem a conta.
 
 Os outros valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 = 1,00` (só a proporção importa). Cada ajuste vale na hora e fica gravado em `backend/calibracao_robo.json`.
 
@@ -163,7 +163,7 @@ Os outros valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 
    - **curva em vez de ir reto**: **correção de giro** (positivo = gira horário).
 3. Repita com `2` (trás).
 4. **Lados** (`4` e `6`): se ele ainda vai para frente/trás enquanto anda de lado, é a proporção **M1 contra M3**; se ele gira andando de lado, é a força de **M2 (frente)** contra M1 e M3.
-5. **Diagonais** (`7 9 1 3`): são as mais sensíveis. A `9` e a `1` são o espelho da `7` e da `3`: uma roda que só precisa ajudar um pouco **recebe o mínimo (50) e não fica parada**, porque com só uma roda de trás empurrando o robô pivota (era o giro grande da `9` e da `1`).
+5. **Diagonais** (`7 9 1 3`): são as mais sensíveis. A `9` e a `1` estão ajustadas à mão (a `1` é o inverso da `9`); a conta dava o espelho da `7` e da `3`: uma roda que só precisa ajudar um pouco **recebe o mínimo (50) e não fica parada**, porque com só uma roda de trás empurrando o robô pivota (era o giro grande da `9` e da `1`).
 
 ### Ajustar uma tecla na mão (tabela *Valores por tecla*)
 

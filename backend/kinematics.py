@@ -80,11 +80,19 @@ CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cal
 DEFAULT_GAINS = (1.10, 2.00, 1.00)
 
 # Valores acertados no robô de verdade (nível 60), que valem no lugar da conta:
-#  - frente: achada na prática (ajuste dos controles até ir quase reto);
-#  - trás: o INVERSO exato da frente.
-# As outras teclas seguem a cinemática: mexer nos ganhos e correções globais para acertar a frente piorou todas
-# as demais (a 7 virava uma roda zerada), então só estas duas teclas guardam o ajuste.
-TUNED_KEYS = {'8': [67, 0, -59], '2': [-67, 0, 59]}
+#  - frente: achada na prática (ajuste dos controles até ir quase reta); trás: o INVERSO exato da frente;
+#  - giro (Q/E): os três motores com o mesmo valor, 60 (era assim no original e o robô girava certo);
+#  - lado (4 e 6): cada um ajustado à mão na prática, o 4 e o 6 NÃO são o inverso um do outro (os motores rendem
+#    diferente conforme o sentido), por isso valem os dois valores medidos;
+#  - diagonal 9: ajustada na prática; a 1 é o inverso exato dela.
+# As diagonais 7 e 3 seguem a cinemática (confirmadas no robô): mexer nos ganhos e correções globais para acertar a
+# frente piorou todas as demais, então o ajuste fica só nas teclas abaixo.
+TUNED_KEYS = {
+    '8': [67, 0, -59], '2': [-67, 0, 59],
+    'cw': [60, 60, 60], 'ccw': [-60, -60, -60],
+    '9': [50, 50, -97], '1': [-50, -50, 97],
+    '4': [63, -95, 50], '6': [-50, 95, -50],
+}
 
 # Tecla oposta (o inverso): andar para o lado contrário com os motores girando ao contrário
 OPPOSITE_KEY = {'8': '2', '2': '8', '4': '6', '6': '4', '7': '3', '3': '7', '9': '1', '1': '9', 'cw': 'ccw', 'ccw': 'cw'}

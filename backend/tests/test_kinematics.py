@@ -160,9 +160,25 @@ class RoboRealTest(unittest.TestCase):
     def test_as_outras_teclas_seguem_a_cinematica_pura(self):
         # Mexer nos ganhos globais para acertar a frente piorou o resto (a 7 virava uma roda zerada)
         tuned, theory = k.Calibration.tuned(), k.Calibration()
-        for key in (4, 6, 7, 9, 1, 3, 'cw', 'ccw'):
+        for key in (7, 3):  # as diagonais confirmadas: nada mudou
             self.assertEqual(k.numpad_vector(key, 60, tuned), k.numpad_vector(key, 60, theory), key)
         self.assertEqual((tuned.ganhos, tuned.correcao_lateral, tuned.correcao_giro), (list(k.DEFAULT_GAINS), 0.0, 0.0))
+
+    def test_giro_tem_o_mesmo_valor_nos_tres_motores_em_60(self):
+        tuned = k.Calibration.tuned()
+        self.assertEqual(k.numpad_vector('cw', 60, tuned), (60, 60, 60))
+        self.assertEqual(k.numpad_vector('ccw', 60, tuned), (-60, -60, -60))
+        self.assertEqual(k.numpad_vector('cw', 100, tuned), (100, 100, 100))  # escala com a velocidade
+
+    def test_lado_4_e_6_ajustados_a_mao(self):
+        tuned = k.Calibration.tuned()
+        self.assertEqual(k.numpad_vector(4, 60, tuned), (63, -95, 50))
+        self.assertEqual(k.numpad_vector(6, 60, tuned), (-50, 95, -50))
+
+    def test_diagonal_9_ajustada_e_1_e_o_inverso_exato(self):
+        tuned = k.Calibration.tuned()
+        self.assertEqual(k.numpad_vector(9, 60, tuned), (50, 50, -97))
+        self.assertEqual(k.numpad_vector(1, 60, tuned), (-50, -50, 97))
 
     def test_vale_para_voz_e_autonomo_e_escala_com_a_velocidade(self):
         tuned = k.Calibration.tuned()
@@ -175,6 +191,15 @@ class RoboRealTest(unittest.TestCase):
 
     def test_o_arquivo_do_projeto_e_o_robo_real(self):
         self.assertEqual(k.Calibration.load().to_dict(), k.Calibration.tuned().to_dict())
+
+    def test_no_robo_real_cada_tecla_e_o_inverso_da_oposta(self):
+        tuned = k.Calibration.tuned()
+        for key, other in k.OPPOSITE_KEY.items():
+            if key in ('4', '6'):
+                continue  # o lado foi ajustado à mão em cada sentido (os motores rendem diferente)
+            a = k.numpad_vector(key if key.isalpha() else int(key), 60, tuned)
+            b = k.numpad_vector(other if other.isalpha() else int(other), 60, tuned)
+            self.assertEqual(b, tuple(-v for v in a), f"{key} / {other}")
 
     def test_cada_tecla_tem_sua_oposta(self):
         for key, other in k.OPPOSITE_KEY.items():
