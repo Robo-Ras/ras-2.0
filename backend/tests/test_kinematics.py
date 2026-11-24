@@ -160,8 +160,9 @@ class RoboRealTest(unittest.TestCase):
     def test_as_outras_teclas_seguem_a_cinematica_pura(self):
         # Mexer nos ganhos globais para acertar a frente piorou o resto (a 7 virava uma roda zerada)
         tuned, theory = k.Calibration.tuned(), k.Calibration()
-        for key in (7, 3):  # as diagonais confirmadas: nada mudou
+        for key in (7, 3):  # as diagonais confirmadas: gravadas fixas, iguais à conta
             self.assertEqual(k.numpad_vector(key, 60, tuned), k.numpad_vector(key, 60, theory), key)
+            self.assertIn(str(key), tuned.teclas)
         self.assertEqual((tuned.ganhos, tuned.correcao_lateral, tuned.correcao_giro), (list(k.DEFAULT_GAINS), 0.0, 0.0))
 
     def test_giro_tem_o_mesmo_valor_nos_tres_motores_em_60(self):
@@ -177,8 +178,8 @@ class RoboRealTest(unittest.TestCase):
 
     def test_diagonal_9_ajustada_e_1_e_o_inverso_exato(self):
         tuned = k.Calibration.tuned()
-        self.assertEqual(k.numpad_vector(9, 60, tuned), (50, 50, -97))
-        self.assertEqual(k.numpad_vector(1, 60, tuned), (-50, -50, 97))
+        self.assertEqual(k.numpad_vector(9, 60, tuned), (50, 67, -97))
+        self.assertEqual(k.numpad_vector(1, 60, tuned), (-50, -67, 97))
 
     def test_vale_para_voz_e_autonomo_e_escala_com_a_velocidade(self):
         tuned = k.Calibration.tuned()

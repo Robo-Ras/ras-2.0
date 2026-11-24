@@ -139,13 +139,13 @@ Valores que o sistema envia com a calibração inicial:
 | Tecla | Direção | M1 (trás-esq.) | M2 (frente) | M3 (trás-dir.) | velocidade 100: M1 / M2 / M3 |
 |-------|---------|---:|---:|---:|---|
 | `8` | ↑ frente (**acertada no robô**) | 67 | 0 | -59 | 112 / 0 / -98 |
-| `9` | ↗ frente-direita (**ajustada na prática**) | 50 | 50 | -97 | 83 / 83 / -162 |
+| `9` | ↗ frente-direita (**ajustada na prática**) | 50 | 67 | -97 | 83 / 112 / -162 |
 | `6` | → direita (**ajustada à mão**) | -50 | 95 | -50 | -83 / 158 / -83 |
-| `3` | ↘ trás-direita | -88 | 50 | 50 | -146 / 59 / 50 |
+| `3` | ↘ trás-direita (**fixa**) | -88 | 50 | 50 | -146 / 59 / 50 |
 | `2` | ↓ trás (**o inverso da frente**) | -67 | 0 | 59 | -112 / 0 / 98 |
-| `1` | ↙ trás-esquerda (**inverso da 9**) | -50 | -50 | 97 | -83 / -83 / 162 |
+| `1` | ↙ trás-esquerda (**inverso da 9**) | -50 | -67 | 97 | -83 / -112 / 162 |
 | `4` | ← esquerda (**ajustada à mão**) | 63 | -95 | 50 | 105 / -158 / 83 |
-| `7` | ↖ frente-esquerda | 88 | -50 | -50 | 146 / -59 / -50 |
+| `7` | ↖ frente-esquerda (**fixa**) | 88 | -50 | -50 | 146 / -59 / -50 |
 | `cw` | ↻ giro horário (**os três iguais**) | 60 | 60 | 60 | 100 / 100 / 100 |
 | `ccw` | ↺ giro anti-horário | -60 | -60 | -60 | -100 / -100 / -100 |
 
@@ -153,7 +153,7 @@ Valores que o sistema envia com a calibração inicial:
 
 ### Calibrar na prática (cartão *Calibração dos motores* no painel)
 
-**Já acertado no robô:** a **frente** (`8` = `67, 0, -59`) foi achada na prática, e a **trás** (`2`) é o **inverso exato** dela. As duas ficam gravadas como valores por tecla (marcadas *manual*). Mexer na força dos motores e nas correções globais para acertar a frente piorou todas as outras teclas, por isso o ajuste ficou só nessas duas. O **lado** (`4` e `6`) também foi ajustado à mão, cada um no seu sentido (os motores rendem diferente conforme o sentido, então um não é o inverso do outro). O **giro** (`Q`/`E`) tem os três motores com o mesmo valor, 60. A `9` foi ajustada na prática e a `1` é o inverso dela; só a `7` e a `3` seguem a conta.
+**Já acertado no robô:** a **frente** (`8` = `67, 0, -59`) foi achada na prática, e a **trás** (`2`) é o **inverso exato** dela. As duas ficam gravadas como valores por tecla (marcadas *manual*). Mexer na força dos motores e nas correções globais para acertar a frente piorou todas as outras teclas, por isso o ajuste ficou só nessas duas. O **lado** (`4` e `6`) também foi ajustado à mão, cada um no seu sentido (os motores rendem diferente conforme o sentido, então um não é o inverso do outro). O **giro** (`Q`/`E`) tem os três motores com o mesmo valor, 60. A `9` foi ajustada na prática e a `1` é o inverso dela; a `7` e a `3` estão gravadas fixas com os valores confirmados. Todas as teclas têm valor fixo (`backend/calibracao_robo.json`, e o padrão está em `TUNED_KEYS` em `kinematics.py`).
 
 Os outros valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 = 1,00` (só a proporção importa). Cada ajuste vale na hora e fica gravado em `backend/calibracao_robo.json`.
 

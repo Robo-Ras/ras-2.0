@@ -84,13 +84,13 @@ DEFAULT_GAINS = (1.10, 2.00, 1.00)
 #  - giro (Q/E): os três motores com o mesmo valor, 60 (era assim no original e o robô girava certo);
 #  - lado (4 e 6): cada um ajustado à mão na prática, o 4 e o 6 NÃO são o inverso um do outro (os motores rendem
 #    diferente conforme o sentido), por isso valem os dois valores medidos;
-#  - diagonal 9: ajustada na prática; a 1 é o inverso exato dela.
-# As diagonais 7 e 3 seguem a cinemática (confirmadas no robô): mexer nos ganhos e correções globais para acertar a
-# frente piorou todas as demais, então o ajuste fica só nas teclas abaixo.
+#  - diagonal 9: ajustada na prática; a 1 é o inverso exato dela; 7 e 3 confirmadas no robô (gravadas fixas).
+# Todas as teclas ficam fixas: mexer nos ganhos e correções globais para acertar a frente piorou as demais.
 TUNED_KEYS = {
     '8': [67, 0, -59], '2': [-67, 0, 59],
     'cw': [60, 60, 60], 'ccw': [-60, -60, -60],
-    '9': [50, 50, -97], '1': [-50, -50, 97],
+    '9': [50, 67, -97], '1': [-50, -67, 97],
+    '7': [88, -50, -50], '3': [-88, 50, 50],
     '4': [63, -95, 50], '6': [-50, 95, -50],
 }
 
