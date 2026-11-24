@@ -82,9 +82,9 @@ export const AutonomousControl = ({
           <Slider
             value={[autonomousSpeed]}
             onValueChange={(value) => onSpeedChange(value[0])}
-            min={50}
-            max={200}
-            step={10}
+            min={60}
+            max={100}
+            step={5}
             disabled={!isConnected}
           />
           <div className="flex justify-between text-xs text-muted-foreground">

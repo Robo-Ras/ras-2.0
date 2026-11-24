@@ -142,7 +142,8 @@ class SimArduinoTest(unittest.TestCase):
         for direction, signs in expected.items():
             robot.move(direction, 120)
             vel = wheels_to_body_velocity(*world.wheels)
-            self.assertEqual(tuple(int(np.sign(round(v, 6))) for v in vel), signs, direction)
+            # arredonda: com PWM inteiro sobra um resíduo minúsculo no eixo que devia ser zero
+            self.assertEqual(tuple(int(np.sign(round(v, 2))) for v in vel), signs, direction)
         robot.disconnect()
         self.assertFalse(robot.is_connected())
 

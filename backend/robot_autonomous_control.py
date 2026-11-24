@@ -17,6 +17,7 @@ import base64
 import json
 import math
 import signal
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
@@ -26,6 +27,7 @@ import serial.tools.list_ports
 import websockets
 from scipy.spatial import distance
 
+import kinematics
 import sensors
 
 SIM_PORT = 'SIM'
@@ -33,7 +35,7 @@ SIM_PORT = 'SIM'
 # Comandos de voz (assistente José em voz/ ou o microfone do navegador): direção e por quantos segundos.
 # O Arduino não para sozinho, então cada comando é um movimento curto que termina com 'stop'.
 # Os tempos de giro dependem da velocidade e do piso: calibre no robô real.
-VOICE_SPEED = 100
+VOICE_SPEED = kinematics.BASE_LEVEL  # nível de velocidade dos comandos de voz (60 = o padrão)
 # Velocidade padrão do modo autônomo (o slider do painel e o celular começam nela)
 AUTONOMOUS_SPEED = 60
 VOICE_MOVES = {
@@ -56,6 +58,13 @@ LITE_DROPPED_KEYS = ('camera_image', 'realsense_image', 'lidar_scan')
 BRAKE_S = 1.0
 BRAKE_FACTOR = 0.5
 BRAKE_STEP_S = 0.1
+# Na TROCA DE DIREÇÃO a freada é bem mais curta e proporcional à velocidade: DIRECTION_BRAKE_S é o tempo para o
+# motor mais exigido em PWM 100; em PWM 50 leva a metade. (Soltar o botão e fim de comando seguem com BRAKE_S.)
+DIRECTION_BRAKE_S = 0.4
+DIRECTION_BRAKE_REF_PWM = 100
+# Repetir o mesmo comando (botão segurado) não reescreve a serial; só reenvia depois deste tempo, para um
+# Arduino que tenha reiniciado voltar a andar
+REPEAT_REFRESH_S = 0.5
 
 # Controle por toque (celular): o comando precisa ser renovado a cada < HOLD_TIMEOUT_S
 HOLD_TIMEOUT_S = 0.6
@@ -456,6 +465,8 @@ class RobotController:
         self.sim_world = sim_world
         self.reserved_ports = set()  # portas em uso por outros sensores (LiDAR)
         self.last_vec = (0, 0, 0)  # último comando enviado aos motores (o freio parte dele)
+        self.last_sent = 0.0  # quando foi escrito na serial (repetições iguais não são reenviadas toda hora)
+        self.calibration = kinematics.Calibration.load()  # força de cada motor e correções para andar reto
 
     def connect(self, port):
         """Conecta ao Arduino"""
@@ -472,6 +483,8 @@ class RobotController:
                     raise IOError(f"{port} está sendo usada pelo LiDAR")
                 self.serial_port = serial.Serial(port, 9600, timeout=1)
             self.port_name = port
+            self.last_vec = (0, 0, 0)  # placa nova/reiniciada: parada
+            self.last_sent = 0.0
             print(f"✓ Conectado ao Arduino na porta {port}")
             return True
         except Exception as e:
@@ -500,34 +513,31 @@ class RobotController:
             return False
 
         try:
-            m1, m2, m3 = (max(-255, min(255, int(v))) for v in (m1, m2, m3))
+            # Teto de PWM no sistema (o Arduino só limita em 255): nada passa de kinematics.HARD_MAX_PWM
+            m1, m2, m3 = (kinematics.clamp_pwm(v) for v in (m1, m2, m3))
+            now = time.monotonic()
+            if (m1, m2, m3) == self.last_vec and any(self.last_vec) and now - self.last_sent < REPEAT_REFRESH_S:
+                return True  # mesmo movimento de novo (o botão repete a cada 0,15 s): não enche a serial de ruído
             command = f"{m1},{m2},{m3}\n"
             print(f"📤 ENVIANDO PARA ARDUINO: {command.strip()}")
             self.serial_port.write(command.encode())
             self.last_vec = (m1, m2, m3)
+            self.last_sent = now
             return True
         except Exception as e:
             print(f"✗ Erro ao enviar comando: {e}")
             return False
 
-    def vector(self, direction, speed):
-        """Valores (M1, M2, M3) de uma direção, ou None se a direção não existe"""
+    def vector(self, direction, level):
+        """PWM (M1, M2, M3) de uma direção na velocidade `level` (padrão 60), ou None se a direção não existe.
 
-        commands = {
-            # Frente/trás invertidos após o teste no robô real (os botões do painel e do celular
-            # usam os mesmos valores: frontend/src/lib/drive.ts)
-            'forward': (speed, 0, -speed),           # Frente: M1=+speed, M2=0, M3=-speed
-            'backward': (-speed, 0, speed),          # Trás: M1=-speed, M2=0, M3=+speed
-            'left': (0, -speed, speed),              # Esquerda: M1=0, M2=-speed, M3=+speed
-            'right': (0, speed, -speed),             # Direita: M1=0, M2=+speed, M3=-speed
-            'rotate_right': (speed, speed, speed),   # Rotação horária in-place
-            'rotate_left': (-speed, -speed, -speed), # Rotação anti-horária in-place
-            'stop': (0, 0, 0)
-        }
-        return commands.get(direction)
+        Vem da cinemática do robô de 3 rodas com a calibração dos motores (kinematics.py): "lado" é lado de
+        verdade (não diagonal) e frente/trás saem retos, dentro dos limites de PWM do nível.
+        """
+        return kinematics.direction_vector(direction, level, self.calibration)
 
     def move(self, direction, speed):
-        """Move o robô em uma direção"""
+        """Move o robô em uma direção; `speed` é o nível de velocidade (padrão 60)"""
         vec = self.vector(direction, speed)
         return self.send_command(*vec) if vec else False
 
@@ -658,6 +668,7 @@ class WebSocketServer:
              'initial': True},
             {'type': 'autonomous_status', 'enabled': self.autonomous_mode},
             {'type': 'yolo_status', 'enabled': self.use_yolo, 'initial': True},
+            self.calibration_message(),
         ):
             await websocket.send(json.dumps(message))
 
@@ -797,6 +808,43 @@ class WebSocketServer:
                     self.last_move_time = now
                 self.hold_deadline = None
 
+        elif cmd_type == 'drive':
+            # Teclado numérico: 7 8 9 / 4 5 6 / 1 2 3 = as 8 direções, 5 = parar; 'cw'/'ccw' giram no lugar.
+            # `speed` é o nível de velocidade (60 a 100, padrão 60).
+            self.cancel_voice_move()
+            now = asyncio.get_running_loop().time()
+            try:
+                level = float(data.get('speed', kinematics.BASE_LEVEL))
+                vec = kinematics.numpad_vector(data.get('key'), level, self.robot.calibration)
+            except (KeyError, ValueError, TypeError):
+                print(f"⚠ drive ignorado (tecla inválida): {data.get('key')!r}")
+                return
+            self.manual_move(vec, soft=bool(data.get('soft')), hold=bool(data.get('hold')), now=now)
+
+        elif cmd_type == 'get_calibration':
+            await self.send_to_all(self.calibration_message())
+
+        elif cmd_type == 'set_calibration':
+            cal = self.robot.calibration
+            try:
+                new = kinematics.Calibration(
+                    ganhos=data.get('ganhos', cal.ganhos),
+                    correcao_lateral=data.get('correcao_lateral', cal.correcao_lateral),
+                    correcao_giro=data.get('correcao_giro', cal.correcao_giro),
+                ).validate()
+            except (ValueError, TypeError) as e:
+                await self.send_to_all({'type': 'calibration_error', 'error': str(e)})
+                await self.send_to_all(self.calibration_message())  # a tela volta ao valor válido
+                return
+            self.robot.calibration = new
+            new.save()
+            await self.send_to_all(self.calibration_message())
+
+        elif cmd_type == 'reset_calibration':
+            self.robot.calibration = kinematics.Calibration()
+            self.robot.calibration.save()
+            await self.send_to_all(self.calibration_message())
+
         elif cmd_type == 'set_autonomous':
             self.hold_deadline = None
             self.cancel_brake()
@@ -817,6 +865,14 @@ class WebSocketServer:
 
         elif cmd_type == 'robot_face_heartbeat':
             self.tablet_connected = True
+
+    def calibration_message(self):
+        cal = self.robot.calibration
+        return {'type': 'calibration', **cal.to_dict(), 'limites': {
+            'pwm_min_base': kinematics.PWM_MIN_BASE, 'pwm_max_base': kinematics.PWM_MAX_BASE,
+            'nivel_base': kinematics.BASE_LEVEL, 'nivel_min': kinematics.LEVEL_MIN, 'nivel_max': kinematics.LEVEL_MAX,
+            'razao_max_ganhos': kinematics.MAX_GAIN_RATIO, 'pwm_teto': kinematics.HARD_MAX_PWM,
+        }}
 
     def cancel_brake(self):
         if self.brake_task and not self.brake_task.done():
@@ -850,31 +906,44 @@ class WebSocketServer:
             self.pending_vec = vec  # começa quando a freada acabar
             return
         if moving and not same_direction(self.robot.last_vec, vec):
-            self.pending_vec = vec  # trocou de direção: freia antes de virar
-            self.brake_task = asyncio.create_task(self._brake_manual())
+            self.pending_vec = vec  # trocou de direção: freia (rápido, proporcional à velocidade) antes de virar
+            self.brake_task = asyncio.create_task(self._brake_manual(direction_change=True))
             return
         self.robot.send_command(*vec)
         self.robot_moving = True
         self.last_move_time = now
 
-    async def _brake(self):
-        """ABS: em BRAKE_S segundos reduz o movimento atual à metade e então para."""
+    @staticmethod
+    def direction_brake_s(vec):
+        """Tempo da freada na troca de direção: proporcional à velocidade (o motor mais exigido)."""
+        return DIRECTION_BRAKE_S * max(abs(v) for v in vec) / DIRECTION_BRAKE_REF_PWM
+
+    async def _brake(self, duration=None):
+        """ABS: em `duration` s (BRAKE_S por padrão) reduz o movimento atual à metade e então para.
+
+        Nunca desce abaixo do que o motor consegue girar (kinematics.MIN_RUN_PWM): se a metade ficaria abaixo
+        disso, a descida vai só até esse mínimo.
+        """
         vec0 = self.robot.last_vec
-        if not any(vec0):
+        active = [abs(v) for v in vec0 if v]
+        if not active:
             return
+        duration = BRAKE_S if duration is None else duration
+        k_end = max(BRAKE_FACTOR, kinematics.MIN_RUN_PWM / min(active))
         loop = asyncio.get_running_loop()
         t0 = loop.time()
         self.robot_moving = True
-        while (elapsed := loop.time() - t0) < BRAKE_S:
-            k = 1.0 - (1.0 - BRAKE_FACTOR) * elapsed / BRAKE_S
+        step = max(0.02, min(BRAKE_STEP_S, duration / 4))
+        while k_end < 1.0 and (elapsed := loop.time() - t0) < duration:
+            k = 1.0 - (1.0 - k_end) * elapsed / duration
             self.robot.send_command(*(round(v * k) for v in vec0))
             self.last_move_time = loop.time()  # o timeout do movimento manual não pode achar que parou
-            await asyncio.sleep(BRAKE_STEP_S)
+            await asyncio.sleep(step)
         self.robot.move('stop', 0)
         self.robot_moving = False
 
-    async def _brake_manual(self):
-        await self._brake()
+    async def _brake_manual(self, direction_change=False):
+        await self._brake(self.direction_brake_s(self.robot.last_vec) if direction_change else None)
         vec, self.pending_vec = self.pending_vec, None
         loop = asyncio.get_running_loop()
         if vec and any(vec) and (self.hold_deadline is None or loop.time() < self.hold_deadline):
@@ -932,7 +1001,7 @@ class WebSocketServer:
             # Se for cancelado, quem cancelou (outro comando, joystick, autônomo) assume os motores
             vec = self.robot.vector(direction, VOICE_SPEED)
             if any(self.robot.last_vec) and not same_direction(self.robot.last_vec, vec):
-                await self._brake()  # já estava andando para outro lado: freia antes de virar
+                await self._brake(self.direction_brake_s(self.robot.last_vec))  # andava para outro lado: freia antes
             end = loop.time() + seconds
             self.robot.send_command(*vec)
             self.robot_moving = True

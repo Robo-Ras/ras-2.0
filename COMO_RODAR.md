@@ -63,7 +63,7 @@ Para andar o formato é **"José, \<comando\>"**, e não usa IA (só um dicioná
 
 | Fala | O robô |
 |------|--------|
-| "José, **frente**" | Anda 1,5 s e para |
+| "José, **frente**" | Anda para frente 1,5 s e para |
 | "José, **trás**" | Anda para trás 1,5 s |
 | "José, **direita**" / "José, **esquerda**" | Anda para o lado 1,5 s |
 | "José, **gira**" | Gira no lugar uma volta |
@@ -116,7 +116,60 @@ No tablet, na mesma rede Wi-Fi (descubra o IP do notebook com `hostname -I`):
 
 Com `--lan`, qualquer pessoa na mesma rede consegue controlar o robô. Use só em rede confiável.
 
-## 9. Desligar
+## 9. Andar nas 8 direções e calibrar os motores
+
+O robô tem **3 rodas omnidirecionais a 120°**: **M2 na frente**, **M1 atrás à esquerda** e **M3 atrás à direita**. Quem calcula o PWM de cada motor é o sistema ([`backend/kinematics.py`](backend/kinematics.py)); o Arduino continua só recebendo `m1,m2,m3` e **não foi alterado**.
+
+**Teclado numérico** (no painel, em *Controle manual*; só o valor da tecla é enviado):
+
+```
+7 ↖   8 ↑   9 ↗
+4 ←   5 ■   6 →      5 para o robô
+1 ↙   2 ↓   3 ↘      Q / E giram no lugar
+```
+
+W A S D e as setas continuam valendo (= 8, 4, 2, 6). No celular os botões têm a mesma disposição.
+
+### Os limites de PWM (e por que dependem da velocidade)
+
+Na **velocidade padrão 60**, os motores trabalham **entre 50 e 100**: o mais forte (o da frente) no mínimo, **50**, e o mais fraco (o da direita) no máximo, **100**, no limite de **2 para 1** de diferença para não acelerar demais. Abaixo de 50 o motor não gira. Se a velocidade sobe, **o mínimo e o máximo sobem juntos** (na 100: ~83 a ~167). A velocidade vai de 60 a 100 (abaixo de 60 o motor da frente não giraria).
+
+Valores que o sistema envia com a calibração inicial:
+
+| Tecla | Direção | M1 (trás-esq.) | M2 (frente) | M3 (trás-dir.) | velocidade 100: M1 / M2 / M3 |
+|-------|---------|---:|---:|---:|---|
+| `8` | ↑ frente | 79 | 0 | -87 | 131 / 0 / -144 |
+| `9` | ↗ frente-direita | 0 | 50 | -97 | 50 / 59 / -161 |
+| `6` | → direita | -50 | 50 | -50 | -76 / 83 / -83 |
+| `3` | ↘ trás-direita | -88 | 50 | 50 | -146 / 59 / 50 |
+| `2` | ↓ trás | -79 | 0 | 87 | -131 / 0 / 144 |
+| `1` | ↙ trás-esquerda | 0 | -50 | 97 | -50 / -59 / 161 |
+| `4` | ← esquerda | 50 | -50 | 50 | 76 / -83 / 83 |
+| `7` | ↖ frente-esquerda | 88 | -50 | -50 | 146 / -59 / -50 |
+| `cw` | ↻ giro horário | 91 | 50 | 100 | 152 / 83 / 167 |
+| `ccw` | ↺ giro anti-horário | -91 | -50 | -100 | -152 / -83 / -167 |
+
+**O que mudou em relação à tabela antiga:** "esquerda/direita" era `(0, ±s, ∓s)`, que zera uma roda e dá uma **diagonal** (e é o que você viu: o botão de lado ia para frente-direita / trás-esquerda). De lado de verdade, a roda da frente faz a força maior e as **duas de trás ajudam, metade cada, no sentido oposto**. Além disso, como os motores têm forças diferentes, o PWM de cada um é dividido pela sua força (motor forte recebe menos), o que compensa o desvio para a esquerda ao ir para frente/trás (o motor da esquerda é um pouco mais forte).
+
+### Calibrar na prática (cartão *Calibração dos motores* no painel)
+
+Os valores iniciais são **estimativas**: força `M1 = 1,10 · M2 = 2,00 · M3 = 1,00` (só a proporção importa). Cada ajuste vale na hora e fica gravado em `backend/calibracao_robo.json`.
+
+1. **Rodas fora do chão** (robô levantado), botão de parada física à mão. Aperte cada tecla e confira que **as rodas certas giram no sentido certo** (a tabela acima): `8` = M1 e M3 (M2 parada); `6` e `4` = as três; `5` para tudo.
+2. **No chão**, em espaço livre, nível 60, tecla `8` por uns 2 s:
+   - **puxa para a esquerda** (ou direita): ajuste a força de **M1 contra M3** (suba M1 se puxa para a esquerda) ou use a **correção lateral** (positivo = empurra para a direita);
+   - **curva em vez de ir reto**: **correção de giro** (positivo = gira horário).
+3. Repita com `2` (trás).
+4. **Lados** (`4` e `6`): se ele ainda vai para frente/trás enquanto anda de lado, é a proporção **M1 contra M3**; se ele gira andando de lado, é a força de **M2 (frente)** contra M1 e M3.
+5. **Diagonais** (`7 9 1 3`): são as mais sensíveis. No nível 60 algumas ficam até ~15° tortas, porque o menor PWM que o motor aceita é 50 e a conta pede menos. Em velocidade maior ficam mais certas.
+
+**Limites que valem saber:** a correção lateral ao andar para frente/trás só atua pelas rodas de trás (a da frente não gira com menos de 50), então é fina mas vem com um pouco de giro. A diferença máxima de força entre motores é **2:1** (o cartão recusa mais que isso).
+
+### Freio ao trocar de direção
+
+Ao **trocar de direção** com o robô andando, ele freia antes de virar, e o tempo é **proporcional à velocidade**: 0,4 s com o motor mais exigido em PWM 100 (0,2 s em PWM 50). Antes era 1 s fixo. Fim de comando e soltar o botão no celular continuam freando em 1 s; parada de emergência corta na hora.
+
+## 10. Desligar
 
 `Ctrl+C` no terminal do `start.sh`. Os motores recebem a ordem de parar, e o backend, o painel e o José fecham juntos. Depois desligue a bateria.
 

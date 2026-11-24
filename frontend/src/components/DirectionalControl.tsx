@@ -2,135 +2,81 @@ import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
-import { driveVector } from '@/lib/drive';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Square, RotateCw, RotateCcw } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight, Square, RotateCw, RotateCcw } from 'lucide-react';
+import { NUMPAD_ROWS, DRIVE_KEY_LABELS, SPEED_DEFAULT, SPEED_MIN, SPEED_MAX, clampSpeed, keyToDrive, type DriveKey } from '@/lib/drive';
 
 interface DirectionalControlProps {
-  onSendCommand: (m1: number, m2: number, m3: number) => void;
+  onDrive: (key: DriveKey, speed: number) => void;
+  onStop: () => void;
 }
 
-const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
-  const [speed, setSpeed] = useState(60);
-  const [activeDirection, setActiveDirection] = useState<string | null>(null);
+const ICONS: Record<number, JSX.Element> = {
+  7: <ArrowUpLeft size={26} />, 8: <ArrowUp size={26} />, 9: <ArrowUpRight size={26} />,
+  4: <ArrowLeft size={26} />, 5: <Square size={22} />, 6: <ArrowRight size={26} />,
+  1: <ArrowDownLeft size={26} />, 2: <ArrowDown size={26} />, 3: <ArrowDownRight size={26} />,
+};
 
-  const moveForward = useCallback(() => {
-    // Frente: M1=+speed, M2=0, M3=-speed (invertido após teste no robô real)
-    console.log(`🎯 moveForward chamado com speed=${speed}, enviando: M1=${speed}, M2=0, M3=${-speed}`);
-    onSendCommand(...driveVector('forward', speed));
-    setActiveDirection('forward');
-  }, [speed, onSendCommand]);
-  
-  const moveBackward = useCallback(() => {
-    // Trás: M1=-speed, M2=0, M3=+speed (invertido após teste no robô real)
-    console.log(`🎯 moveBackward chamado com speed=${speed}, enviando: M1=${-speed}, M2=0, M3=${speed}`);
-    onSendCommand(...driveVector('backward', speed));
-    setActiveDirection('backward');
-  }, [speed, onSendCommand]);
-  
-  const moveRight = useCallback(() => {
-    // Direita: M1=0, M2=+speed, M3=-speed
-    console.log(`🎯 moveRight chamado com speed=${speed}, enviando: M1=0, M2=${speed}, M3=${-speed}`);
-    onSendCommand(...driveVector('right', speed));
-    setActiveDirection('right');
-  }, [speed, onSendCommand]);
-  
-  const moveLeft = useCallback(() => {
-    // Esquerda: M1=0, M2=-speed, M3=+speed
-    console.log(`🎯 moveLeft chamado com speed=${speed}, enviando: M1=0, M2=${-speed}, M3=${speed}`);
-    onSendCommand(...driveVector('left', speed));
-    setActiveDirection('left');
-  }, [speed, onSendCommand]);
-  
-  const stop = useCallback(() => {
-    console.log(`🎯 stop chamado`);
-    onSendCommand(0, 0, 0);
-    setActiveDirection(null);
-  }, [onSendCommand]);
+const DirectionalControl = ({ onDrive, onStop }: DirectionalControlProps) => {
+  const [speed, setSpeed] = useState(SPEED_DEFAULT);
+  const [active, setActive] = useState<DriveKey | null>(null);
 
-  const rotateClockwise = useCallback(() => {
-    // Rotação horária: M1=+speed, M2=+speed, M3=+speed (60% da velocidade)
-    const rotateSpeed = Math.round(speed * 0.6);
-    console.log(`🎯 rotateClockwise chamado com speed=${speed}, enviando: M1=${rotateSpeed}, M2=${rotateSpeed}, M3=${rotateSpeed}`);
-    onSendCommand(...driveVector('clockwise', speed));
-    setActiveDirection('clockwise');
-  }, [speed, onSendCommand]);
-
-  const rotateCounterClockwise = useCallback(() => {
-    // Rotação anti-horária: M1=-speed, M2=-speed, M3=-speed (60% da velocidade)
-    const rotateSpeed = Math.round(speed * 0.6);
-    console.log(`🎯 rotateCounterClockwise chamado com speed=${speed}, enviando: M1=${-rotateSpeed}, M2=${-rotateSpeed}, M3=${-rotateSpeed}`);
-    onSendCommand(...driveVector('counterclockwise', speed));
-    setActiveDirection('counterclockwise');
-  }, [speed, onSendCommand]);
+  const press = useCallback((key: DriveKey) => {
+    if (key === 5) {
+      onStop(); // o 5 para o robô na hora
+      setActive(null);
+      return;
+    }
+    onDrive(key, speed); // só a tecla: o backend calcula os motores
+    setActive(key);
+  }, [speed, onDrive, onStop]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Não dirige o robô enquanto alguém digita num campo (ex.: velocidade)
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      switch (event.key.toLowerCase()) {
-        case 'w':
-        case 'arrowup':
-          moveForward();
-          break;
-        case 's':
-        case 'arrowdown':
-          moveBackward();
-          break;
-        case 'd':
-        case 'arrowright':
-          moveRight();
-          break;
-        case 'a':
-        case 'arrowleft':
-          moveLeft();
-          break;
-        case 'q':
-          rotateCounterClockwise();
-          break;
-        case 'e':
-          rotateClockwise();
-          break;
-        case ' ':
-          stop();
-          event.preventDefault();
-          break;
-      }
+      if (event.repeat) return; // segurar a tecla não reenvia
+      const key = keyToDrive(event.key);
+      if (key === null) return;
+      if (event.key === ' ') event.preventDefault();
+      press(key);
     };
-
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [moveForward, moveBackward, moveRight, moveLeft, stop, rotateClockwise, rotateCounterClockwise]);
-
-  const padButton = (dir: string, onClick: () => void, icon: React.ReactNode, label: string) => (
-    <Button
-      onClick={onClick}
-      variant={activeDirection === dir ? 'default' : 'secondary'}
-      className="h-14 w-full p-0"
-      aria-label={label}
-      title={label}
-    >
-      {icon}
-    </Button>
-  );
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [press]);
 
   return (
     <div className="space-y-4">
+      {/* Mesma disposição do teclado numérico: 7 8 9 / 4 5 6 / 1 2 3 */}
       <div className="grid grid-cols-3 gap-2 max-w-[240px] mx-auto">
-        {padButton('counterclockwise', rotateCounterClockwise, <RotateCcw size={20} />, 'Girar anti-horário (Q)')}
-        {padButton('forward', moveForward, <ArrowUp size={24} />, 'Frente (W)')}
-        {padButton('clockwise', rotateClockwise, <RotateCw size={20} />, 'Girar horário (E)')}
-        {padButton('left', moveLeft, <ArrowLeft size={24} />, 'Esquerda (A)')}
-        <Button onClick={stop} variant="destructive" className="h-14 w-full p-0" aria-label="Parar (espaço)" title="Parar (espaço)">
-          <Square size={22} />
-        </Button>
-        {padButton('right', moveRight, <ArrowRight size={24} />, 'Direita (D)')}
-        <div />
-        {padButton('backward', moveBackward, <ArrowDown size={24} />, 'Trás (S)')}
-        <div />
+        {NUMPAD_ROWS.flat().map((key) => (
+          <Button
+            key={String(key)}
+            onClick={() => press(key)}
+            variant={key === 5 ? 'destructive' : active === key ? 'default' : 'secondary'}
+            className="h-14 w-full p-0 relative"
+            aria-label={`${DRIVE_KEY_LABELS[key]} (tecla ${key})`}
+            title={`${DRIVE_KEY_LABELS[key]} (tecla ${key})`}
+          >
+            {ICONS[key as number]}
+            <span className="absolute bottom-0.5 right-1.5 text-[10px] opacity-60">{key}</span>
+          </Button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 max-w-[240px] mx-auto">
+        {(['ccw', 'cw'] as DriveKey[]).map((key) => (
+          <Button
+            key={String(key)}
+            onClick={() => press(key)}
+            variant={active === key ? 'default' : 'secondary'}
+            className="flex-1 gap-1.5"
+            title={DRIVE_KEY_LABELS[key]}
+          >
+            {key === 'ccw' ? <RotateCcw size={18} /> : <RotateCw size={18} />}
+            {key === 'ccw' ? 'Q' : 'E'}
+          </Button>
+        ))}
       </div>
 
       <div className="space-y-2">
@@ -139,30 +85,23 @@ const DirectionalControl = ({ onSendCommand }: DirectionalControlProps) => {
           <Input
             type="number"
             value={speed}
-            onChange={(e) => setSpeed(Math.max(0, Math.min(255, Number(e.target.value))))}
-            min={0}
-            max={255}
+            onChange={(e) => setSpeed(clampSpeed(Number(e.target.value)))}
+            min={SPEED_MIN}
+            max={SPEED_MAX}
             className="h-8 w-20 text-right tabular"
           />
         </div>
-        <Slider value={[speed]} onValueChange={(value) => setSpeed(value[0])} min={0} max={255} step={1} />
+        <Slider value={[speed]} onValueChange={(value) => setSpeed(value[0])} min={SPEED_MIN} max={SPEED_MAX} step={1} />
+        <p className="text-[11px] text-muted-foreground">
+          {SPEED_DEFAULT} é o padrão; o PWM dos motores sobe junto com a velocidade (limites da conta no cartão Calibração).
+        </p>
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Teclado: <kbd className="rounded bg-muted px-1">W A S D</kbd> ou setas · <kbd className="rounded bg-muted px-1">Q</kbd>/<kbd className="rounded bg-muted px-1">E</kbd> giram · <kbd className="rounded bg-muted px-1">espaço</kbd> para
+        Teclado numérico: <kbd className="rounded bg-muted px-1">7 8 9 / 4 5 6 / 1 2 3</kbd>, o{' '}
+        <kbd className="rounded bg-muted px-1">5</kbd> para o robô · <kbd className="rounded bg-muted px-1">Q</kbd>/
+        <kbd className="rounded bg-muted px-1">E</kbd> giram · W A S D e setas também valem
       </p>
-
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none">Valores enviados aos motores</summary>
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono tabular">
-          <span>Frente</span><span>{speed}, 0, {-speed}</span>
-          <span>Trás</span><span>{-speed}, 0, {speed}</span>
-          <span>Direita</span><span>0, {speed}, {-speed}</span>
-          <span>Esquerda</span><span>0, {-speed}, {speed}</span>
-          <span>Horário</span><span>{Math.round(speed * 0.6)} × 3</span>
-          <span>Anti-horário</span><span>{-Math.round(speed * 0.6)} × 3</span>
-        </div>
-      </details>
     </div>
   );
 };

@@ -1,0 +1,181 @@
+"""Cinemática do robô de 3 rodas: as 8 direções do teclado numérico, limites de PWM e calibração."""
+
+import math
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import kinematics as k  # noqa: E402
+from simulator import wheels_to_body_velocity  # noqa: E402
+
+IDEAL_ANGLE = {8: 0, 9: -45, 6: -90, 3: -135, 2: 180, 1: 135, 4: 90, 7: 45}  # frente = 0°, esquerda = +90°
+
+
+def heading(pwm):
+    """Ângulo (graus) e giro (graus/s) que o robô simulado, com motores desiguais, faz com esse PWM."""
+    vx, vy, omega = wheels_to_body_velocity(*pwm)
+    return math.degrees(math.atan2(vy, vx)), math.degrees(omega)
+
+
+def angle_error(a, b):
+    return (a - b + 180) % 360 - 180
+
+
+class LimitesDePwmTest(unittest.TestCase):
+    def test_no_nivel_padrao_os_motores_ficam_entre_50_e_100(self):
+        self.assertEqual(k.pwm_limits(60), (50, 100))
+        for key in list(IDEAL_ANGLE) + ['cw', 'ccw']:
+            for m in k.numpad_vector(key, 60):
+                self.assertTrue(m == 0 or 50 <= abs(m) <= 100, f"tecla {key}: {m}")
+
+    def test_o_motor_mais_forte_fica_no_minimo_e_o_mais_fraco_no_maximo(self):
+        # girar no lugar usa as três rodas a 100%: M2 (frente, forte) no mínimo, M3 (direita, fraca) no máximo
+        m1, m2, m3 = k.numpad_vector('cw', 60)
+        self.assertEqual((abs(m2), abs(m3)), (50, 100))
+        self.assertTrue(50 < abs(m1) < 100)  # a esquerda é "um pouco" mais forte que a direita
+
+    def test_aumentar_a_velocidade_sobe_o_minimo_e_o_maximo_juntos(self):
+        lo, hi = k.pwm_limits(100)
+        self.assertAlmostEqual(lo, 50 * 100 / 60)  # ~83
+        self.assertAlmostEqual(hi, 100 * 100 / 60)  # ~167
+        m1, m2, m3 = k.numpad_vector('cw', 100)
+        self.assertEqual((abs(m2), abs(m3)), (round(lo), round(hi)))
+        for key in IDEAL_ANGLE:
+            for m in k.numpad_vector(key, 100):
+                self.assertLessEqual(abs(m), k.HARD_MAX_PWM)
+
+    def test_o_nivel_fica_entre_60_e_100(self):
+        self.assertEqual(k.numpad_vector(8, 10), k.numpad_vector(8, 60))  # abaixo: o motor da frente não giraria
+        self.assertEqual(k.numpad_vector(8, 500), k.numpad_vector(8, 100))
+
+    def test_teto_absoluto_para_comandos_brutos(self):
+        self.assertEqual(k.clamp_pwm(255), k.HARD_MAX_PWM)
+        self.assertEqual(k.clamp_pwm(-255), -k.HARD_MAX_PWM)
+        self.assertEqual(k.clamp_pwm(40), 40)
+
+    def test_nunca_sobra_valor_entre_0_e_50(self):
+        for level in (60, 75, 100):
+            for key in list(IDEAL_ANGLE) + ['cw', 'ccw']:
+                for m in k.numpad_vector(key, level):
+                    self.assertTrue(m == 0 or abs(m) >= 50, f"nível {level}, tecla {key}: {m}")
+
+
+class OitoDirecoesTest(unittest.TestCase):
+    def test_5_para_o_robo(self):
+        self.assertEqual(k.numpad_vector(5, 60), (0, 0, 0))
+
+    def test_tecla_invalida(self):
+        for bad in (0, 10, 'x', None):
+            with self.assertRaises((KeyError, ValueError, TypeError)):
+                k.numpad_vector(bad, 60)
+
+    def test_as_quatro_retas_saem_retas(self):
+        # frente/trás/lados: erro de direção de poucos graus mesmo com motores de força diferente
+        for key in (8, 2, 4, 6):
+            angle, _ = heading(k.numpad_vector(key, 60))
+            self.assertLess(abs(angle_error(angle, IDEAL_ANGLE[key])), 3.0, f"tecla {key}: {angle:.1f}°")
+
+    def test_as_quatro_diagonais(self):
+        # O PWM mínimo que gira (50) impede proporções muito pequenas: algumas diagonais ficam um pouco tortas
+        for key in (7, 9, 1, 3):
+            angle, _ = heading(k.numpad_vector(key, 60))
+            self.assertLess(abs(angle_error(angle, IDEAL_ANGLE[key])), 20.0, f"tecla {key}: {angle:.1f}°")
+
+    def test_oposta_e_o_contrario(self):
+        for a, b in ((8, 2), (4, 6), (7, 3), (9, 1)):
+            self.assertEqual(tuple(-x for x in k.numpad_vector(a, 60)), k.numpad_vector(b, 60) if a in (8, 4) else tuple(-x for x in k.numpad_vector(a, 60)))
+        self.assertEqual(k.numpad_vector(2, 60), tuple(-x for x in k.numpad_vector(8, 60)))
+
+    def test_frente_so_usa_as_rodas_de_tras(self):
+        m1, m2, m3 = k.numpad_vector(8, 60)
+        self.assertEqual(m2, 0)  # a roda da frente rola de lado: não ajuda a ir para a frente
+        self.assertGreater(m1, 0)
+        self.assertLess(m3, 0)
+
+    def test_lado_usa_a_roda_da_frente_e_as_de_tras_no_mesmo_sentido(self):
+        # O que a tabela antiga (0, s, -s) errava: dava diagonal. De lado de verdade, a da frente leva a força e as
+        # duas de trás ajudam com metade cada, no sentido oposto à da frente.
+        m1, m2, m3 = k.numpad_vector(6, 60)  # direita
+        self.assertTrue(m2 > 0 and m1 < 0 and m3 < 0)
+        m1, m2, m3 = k.numpad_vector(4, 60)  # esquerda
+        self.assertTrue(m2 < 0 and m1 > 0 and m3 > 0)
+
+    def test_a_tabela_antiga_dava_diagonal_e_desviava_a_esquerda(self):
+        # Reproduz o que foi visto no robô real (setas do desenho): PWM igual nos 3 motores, sem compensar
+        angle, spin = heading((0, 60, -60))  # "direita" antigo
+        self.assertGreater(angle, -80)  # em vez de -90: foi meio para a frente
+        angle, _ = heading((60, 0, -60))  # "frente" antiga: o motor esquerdo mais forte puxa para a esquerda
+        self.assertGreater(angle, 0.5)
+
+    def test_com_a_compensacao_nao_desvia(self):
+        antes, _ = heading((60, 0, -60))
+        depois, giro = heading(k.numpad_vector(8, 60))
+        self.assertLess(abs(depois), abs(antes))
+        self.assertLess(abs(depois), 0.5)
+        self.assertLess(abs(giro), 1.0)
+
+    def test_girar_no_lugar_nao_anda(self):
+        for key in ('cw', 'ccw'):
+            vx, vy, omega = wheels_to_body_velocity(*k.numpad_vector(key, 60))
+            self.assertLess(math.hypot(vx, vy), 0.01)
+        self.assertLess(heading(k.numpad_vector('cw', 60))[1], 0)  # horário = giro negativo (anti-horário positivo)
+        self.assertGreater(heading(k.numpad_vector('ccw', 60))[1], 0)
+
+    def test_direcoes_por_nome_usam_a_mesma_conta(self):
+        for name, key in (('forward', 8), ('backward', 2), ('left', 4), ('right', 6)):
+            self.assertEqual(k.direction_vector(name, 60), k.numpad_vector(key, 60), name)
+        self.assertEqual(k.direction_vector('rotate_right', 60), k.numpad_vector('cw', 60))
+        self.assertEqual(k.direction_vector('stop', 60), (0, 0, 0))
+        self.assertIsNone(k.direction_vector('voar', 60))
+
+
+class CalibracaoTest(unittest.TestCase):
+    def test_correcao_lateral_empurra_para_a_direita(self):
+        base, _ = heading(k.compose(1, 0, 0, 60, k.Calibration()))
+        com, _ = heading(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=0.15)))
+        self.assertLess(com, base - 1.5)  # mais negativo = mais para a direita
+        # Limite físico: ao andar para frente a roda da frente (a que anda de lado) está em 0 e a correção pediria
+        # dela menos que o PWM mínimo (50): ela não gira, em nenhum valor permitido. Só as rodas de trás corrigem;
+        # o efeito é menor que o teórico (atan 0,15 = 8,5°) e vem com um pouco de giro.
+        for c in (0.15, 0.3, 0.5):
+            self.assertEqual(k.compose(1, 0, 0, 60, k.Calibration(correcao_lateral=c))[1], 0, c)
+
+    def test_correcao_de_giro(self):
+        _, base = heading(k.compose(1, 0, 0, 60, k.Calibration()))
+        _, com = heading(k.compose(1, 0, 0, 60, k.Calibration(correcao_giro=0.15)))
+        self.assertLess(com, base - 0.5)  # horário = giro negativo
+
+    def test_diferenca_maxima_de_forca_entre_motores_e_2_para_1(self):
+        k.Calibration(ganhos=[1.0, 2.0, 1.0]).validate()  # no limite: aceito
+        for ganhos in ([1.0, 2.5, 1.0], [0.0, 1.0, 1.0], [1.0, 1.0]):
+            with self.assertRaises(ValueError):
+                k.Calibration(ganhos=ganhos).validate()
+        with self.assertRaises(ValueError):
+            k.Calibration(correcao_lateral=0.9).validate()
+
+    def test_salva_e_carrega(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'cal.json')
+            k.Calibration(ganhos=[1.2, 1.9, 1.0], correcao_lateral=0.05, correcao_giro=-0.02).save(path)
+            cal = k.Calibration.load(path)
+            self.assertEqual((cal.ganhos, cal.correcao_lateral, cal.correcao_giro), ([1.2, 1.9, 1.0], 0.05, -0.02))
+            self.assertEqual(k.Calibration.load(os.path.join(tmp, 'nao-existe.json')).ganhos, list(k.DEFAULT_GAINS))
+            with open(path, 'w') as f:
+                f.write('{ isto não é json')
+            self.assertEqual(k.Calibration.load(path).ganhos, list(k.DEFAULT_GAINS))  # arquivo ruim: valores iniciais
+
+    def test_o_arquivo_do_projeto_e_valido(self):
+        cal = k.Calibration.load()  # calibracao_robo.json
+        cal.validate()
+
+    def test_motores_iguais_nao_precisam_de_compensacao(self):
+        # Se os 3 motores tivessem a mesma força, a calibração seria neutra: frente = (s, 0, -s) com s = 100 x 0,866
+        m1, m2, m3 = k.compose(1, 0, 0, 60, k.Calibration(ganhos=[1.0, 1.0, 1.0]))
+        self.assertEqual((m1, m2, m3), (87, 0, -87))
+
+
+if __name__ == '__main__':
+    unittest.main()

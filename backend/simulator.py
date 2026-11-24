@@ -15,29 +15,30 @@ from collections import deque
 import cv2
 import numpy as np
 
+import kinematics
 from sensors import CameraBase, LidarBase
 
-# Velocidades do robô simulado com PWM 255
-MAX_LINEAR_SPEED = 0.5    # m/s
-MAX_ANGULAR_SPEED = 3.0   # rad/s
+# Velocidades do robô simulado no nível 60 (a velocidade padrão): andar reto e girar no lugar
+LEVEL60_LINEAR_SPEED = 0.12   # m/s
+LEVEL60_ANGULAR_SPEED = 0.7   # rad/s
 ROBOT_RADIUS = 0.2        # m
 
-# Vetores de roda dos comandos do frontend (DirectionalControl.tsx):
-#   frente = (s, 0, -s), direita = (0, s, -s), giro horário = (s, s, s)
-# Qualquer comando é decomposto nesses três movimentos, então o simulador
-# obedece exatamente o que os botões da interface dizem fazer.
-_PRIMITIVES = np.array([
-    [1.0, 0.0, -1.0],   # frente
-    [0.0, 1.0, -1.0],   # direita
-    [1.0, 1.0, 1.0],    # giro horário
-]).T
-_PRIMITIVES_INV = np.linalg.inv(_PRIMITIVES)
+# O "robô real" do simulador: motores com forças diferentes (o da frente bem mais forte, o da esquerda um pouco
+# mais que o da direita). O controlador compensa isso com a calibração; sem compensar, o robô simulado também desvia.
+SIM_GAINS = kinematics.DEFAULT_GAINS
+_A = np.array([[dx, dy, 1.0] for dx, dy in kinematics.WHEEL_DIRS])  # roda i: u_i = d_i . v + giro_horário
+_A_INV = np.linalg.inv(_A)
 
 
 def wheels_to_body_velocity(m1, m2, m3):
-    """PWM das rodas -> (vx frente m/s, vy esquerda m/s, omega anti-horário rad/s)"""
-    forward, right, clockwise = _PRIMITIVES_INV @ np.array([m1, m2, m3], dtype=float) / 255.0
-    return forward * MAX_LINEAR_SPEED, -right * MAX_LINEAR_SPEED, -clockwise * MAX_ANGULAR_SPEED
+    """PWM das rodas -> (vx frente m/s, vy esquerda m/s, omega anti-horário rad/s)
+
+    Cinemática direta do robô de 3 rodas omni (veja kinematics.py). Cada roda gira com PWM x força do motor;
+    um motor com PWM 100 e ganho 1,0 dá velocidade de roda 1,0, que é o "andar a todo vapor" do nível 60.
+    """
+    u = np.array([g * m for g, m in zip(SIM_GAINS, (m1, m2, m3))], dtype=float) / 100.0
+    vx, vy, clockwise = _A_INV @ u
+    return vx * LEVEL60_LINEAR_SPEED, vy * LEVEL60_LINEAR_SPEED, -clockwise * LEVEL60_ANGULAR_SPEED
 
 
 class SimWorld:

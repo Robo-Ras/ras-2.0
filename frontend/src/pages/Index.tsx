@@ -16,6 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { getWsUrl } from "@/lib/ws";
 import { useSensorToggles } from "@/lib/useSensorToggles";
 import type { VoiceCommandEvent, VoiceCommandId } from "@/lib/voiceCommands";
+import type { DriveKey } from "@/lib/drive";
+import { CalibrationCard, type Calibration } from "@/components/CalibrationCard";
 
 const Index = () => {
   const [lastCommand, setLastCommand] = useState<string>("");
@@ -37,6 +39,7 @@ const Index = () => {
   const [navigationStatus, setNavigationStatus] = useState<any>();
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
   const [lastVoiceEvent, setLastVoiceEvent] = useState<VoiceCommandEvent | null>(null);
+  const [calibration, setCalibration] = useState<Calibration>();
   const { enabled: show, setSensor } = useSensorToggles();
   const wsRef = useRef<WebSocket | null>(null);
   const { toast } = useToast();
@@ -96,6 +99,10 @@ const Index = () => {
               description: `Conectado na porta ${data.port}`,
             });
           }
+        } else if (data.type === 'calibration') {
+          setCalibration(data);
+        } else if (data.type === 'calibration_error') {
+          toast({ title: "Calibração recusada", description: data.error, variant: "destructive" });
         } else if (data.type === 'voice_command') {
           setLastVoiceEvent(data);
           if (data.source === 'jose') {
@@ -168,6 +175,24 @@ const Index = () => {
         m1, m2, m3
       }));
     }
+  };
+
+  // Teclado numérico: manda só a tecla (7 8 9 / 4 5 6 / 1 2 3, 'cw'/'ccw' giram); o backend calcula os motores
+  const handleDrive = (key: DriveKey, speed: number) => {
+    setLastCommand(`tecla ${key} · velocidade ${speed}`);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'drive', key, speed }));
+    }
+  };
+
+  const handleCalibrationChange = (change: object) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'set_calibration', ...change }));
+    }
+  };
+
+  const handleCalibrationReset = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'reset_calibration' }));
   };
 
   const handleVoiceCommand = (command: VoiceCommandId, text: string) => {
@@ -305,7 +330,7 @@ const Index = () => {
                     <TabsTrigger value="motor">Por motor</TabsTrigger>
                   </TabsList>
                   <TabsContent value="directional">
-                    <DirectionalControl onSendCommand={handleSendCommand} />
+                    <DirectionalControl onDrive={handleDrive} onStop={() => handleSendCommand(0, 0, 0)} />
                   </TabsContent>
                   <TabsContent value="motor">
                     <MotorSpeedControl onSendCommand={handleSendCommand} />
@@ -318,6 +343,13 @@ const Index = () => {
                 )}
               </CardContent>
             </Card>
+
+            <CalibrationCard
+              calibration={calibration}
+              onChange={handleCalibrationChange}
+              onReset={handleCalibrationReset}
+              disabled={!isConnected}
+            />
 
             <AutonomousControl
               isConnected={isConnected}

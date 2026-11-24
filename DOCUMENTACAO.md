@@ -209,6 +209,8 @@ ras-2.0/
 │   └── requirements.txt
 ├── backend/
 │   ├── robot_autonomous_control.py   # servidor, obstáculos, navegação, Arduino
+│   ├── kinematics.py                 # cinemática das 3 rodas omni, 8 direções, limites de PWM, calibração
+│   ├── calibracao_robo.json          # força dos motores e correções (editável pelo cartão Calibração)
 │   ├── sensors.py                    # C270, D435, LD06, RPLIDAR
 │   ├── simulator.py                  # mundo simulado e sensores falsos
 │   ├── robot_tracking_system.py      # YOLO + Kalman
@@ -225,7 +227,7 @@ ras-2.0/
         ├── pages/Index.tsx           # painel principal
         ├── pages/TabletStatus.tsx    # carinha do tablet
         ├── lib/ws.ts                 # endereço do backend
-        ├── lib/drive.ts              # valores dos motores por direção (painel e celular)
+        ├── lib/drive.ts              # teclado numérico (7 8 9 / 4 5 6 / 1 2 3), velocidade 60-100; só manda a tecla
         ├── lib/voiceCommands.ts      # vocabulário de voz (o mesmo do José)
         └── components/
             ├── StatusBar.tsx         # barra fixa: status dos sensores + PARAR
@@ -528,6 +530,8 @@ Endereço: `ws://<host>:8765`. Todas as mensagens são JSON com um campo `type`.
 | `toggle_yolo` | `enabled` | Liga/desliga o YOLO (carrega o modelo na primeira vez) |
 | `move` com `hold: true` | `m1, m2, m3, hold` | Movimento "segurando" (celular): precisa ser repetido a cada < 0,6 s (`HOLD_TIMEOUT_S`), senão o backend para os motores |
 | `set_lite` | `enabled`, `camera` | Esta conexão passa a receber o `sensor_data` sem `camera_image`, `realsense_image` e `lidar_scan`; com `camera: true` mantém só a `camera_image` (preview do celular) |
+| `drive` | `key`, `speed`, `hold`, `soft` | Teclado numérico: `key` 1-9 (8 direções; **5 = parar**) ou `cw`/`ccw` (giro). `speed` é o nível de velocidade (60-100, padrão 60). O backend calcula o PWM (`backend/kinematics.py`, calibração em `backend/calibracao_robo.json`) |
+| `get_calibration` / `set_calibration` / `reset_calibration` | `ganhos[3]`, `correcao_lateral`, `correcao_giro` | Calibração dos motores ao vivo; o backend responde `calibration` (e `calibration_error` se recusar, ex.: mais de 2:1 entre motores) |
 | `move` com `soft: true` | `m1, m2, m3 = 0, soft` | Soltou o botão: o robô freia (ABS, `BRAKE_S` = 1 s, cai a `BRAKE_FACTOR` = metade) e para. Sem `soft`, `0,0,0` corta na hora. Mudar de direção durante um movimento também freia antes de virar |
 | `robot_face_heartbeat` | — | Marca o tablet como conectado (expira em 5 s) |
 

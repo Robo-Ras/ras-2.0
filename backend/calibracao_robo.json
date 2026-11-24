@@ -1,0 +1,9 @@
+{
+  "ganhos": [
+    1.1,
+    2.0,
+    1.0
+  ],
+  "correcao_lateral": 0.0,
+  "correcao_giro": 0.0
+}

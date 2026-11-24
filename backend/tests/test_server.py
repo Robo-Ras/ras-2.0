@@ -9,6 +9,8 @@ import json
 import math
 import os
 import sys
+import tempfile
+import time
 import unittest
 
 import cv2
@@ -17,6 +19,7 @@ import websockets
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import kinematics  # noqa: E402
 import robot_autonomous_control as rac  # noqa: E402
 
 
@@ -38,6 +41,10 @@ class Client:
 
 class SimServerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # a calibração de teste não pode sobrescrever a do robô de verdade
+        self._cal_dir = tempfile.TemporaryDirectory()
+        self._cal_file = kinematics.CALIBRATION_FILE
+        kinematics.CALIBRATION_FILE = os.path.join(self._cal_dir.name, 'calibracao.json')
         args = rac.parse_args(['--sim'])
         self.server, self.world = rac.build_system(args)
         self.server.sensors.start()
@@ -48,6 +55,8 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
         self.port = ws_server.sockets[0].getsockname()[1]
 
     async def asyncTearDown(self):
+        kinematics.CALIBRATION_FILE = self._cal_file
+        self._cal_dir.cleanup()
         self.task.cancel()
         try:
             await self.task
@@ -239,11 +248,11 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             await c.wait_for('sensor_data')
             await c.send(type='voice_command', command='frente', text='josé frente', source='jose')
             amostras = await self.sample_speed(rac.VOICE_MOVES['frente'][1] + 0.4)
-            full = rac.VOICE_SPEED
+            full = max(abs(v) for v in kinematics.direction_vector('forward', rac.VOICE_SPEED))
             self.assertEqual(max(amostras), full)  # começa na velocidade cheia
             freando = [a for a in amostras if 0 < a < full]
             self.assertTrue(freando, "tem que haver uma descida gradual, não um corte")
-            self.assertGreaterEqual(min(freando), full * rac.BRAKE_FACTOR - 2)  # nunca abaixo da metade antes de parar
+            self.assertGreaterEqual(min(freando), kinematics.MIN_RUN_PWM - 2)  # nunca abaixo do que o motor gira
             descida = [a for a in amostras[amostras.index(full):] if a > 0]
             self.assertEqual(descida, sorted(descida, reverse=True))  # só diminui
             self.assertEqual(amostras[-1], 0)  # e então para
@@ -258,7 +267,7 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             await c.send(type='move', m1=0, m2=0, m3=0, soft=True)  # soltou o botão (celular)
             await asyncio.sleep(0.45)
             meio = self.speed_now()
-            self.assertTrue(rac.VOICE_SPEED * rac.BRAKE_FACTOR - 2 <= meio < 100, f"freando, mas era {meio}")
+            self.assertTrue(kinematics.MIN_RUN_PWM - 2 <= meio < 100, f"freando, mas era {meio}")
             await asyncio.sleep(1.0)
             self.assertEqual(self.speed_now(), 0)  # parou depois de 1 s
 
@@ -281,11 +290,11 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.3)
             self.assertEqual(self.world.wheels, (100, 0, -100))
             await c.send(type='move', m1=0, m2=-100, m3=100)  # esquerda
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.15)
             m1, m2, m3 = self.world.wheels
             self.assertTrue(m2 == 0 and 50 <= m1 < 100, f"ainda freando a frente: {self.world.wheels}")
-            await asyncio.sleep(0.9)
-            self.assertEqual(self.world.wheels, (0, -100, 100))  # depois da freada, vira
+            await asyncio.sleep(0.6)  # a freada é curta (0,4 s em PWM 100): já virou
+            self.assertEqual(self.world.wheels, (0, -100, 100))
 
     async def test_same_direction_new_speed_does_not_brake(self):
         async with self.connect() as ws:
@@ -306,6 +315,115 @@ class SimServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn('camera_image', data)
             for key in ('lidar_scan', 'realsense_image'):
                 self.assertNotIn(key, data)
+
+    # ---- Teclado numérico (8 direções), calibração e limites ----
+
+    async def test_drive_numpad_sends_the_kinematics_pwm_and_moves_the_right_way(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            for key, ideal in ((8, 0), (6, -90), (4, 90), (2, 180), (9, -45), (7, 45)):
+                await c.send(type='drive', key=key, speed=60)
+                await asyncio.sleep(0.15)
+                self.assertEqual(self.world.wheels, kinematics.numpad_vector(key, 60), key)
+                from simulator import wheels_to_body_velocity
+                vx, vy, _ = wheels_to_body_velocity(*self.world.wheels)
+                angle = math.degrees(math.atan2(vy, vx))
+                self.assertLess(abs((angle - ideal + 180) % 360 - 180), 20, f"tecla {key}: {angle:.0f}°")
+                await c.send(type='drive', key=5)  # o 5 para o robô
+                await asyncio.sleep(0.15)
+                self.assertEqual(self.world.wheels, (0, 0, 0))
+
+    async def test_drive_ignores_invalid_keys_and_clamps_the_speed(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='drive', key=0, speed=60)
+            await c.send(type='drive', key='abc', speed=60)
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, (0, 0, 0))
+            await c.send(type='drive', key=8, speed=9999)  # velocidade absurda: vira o nível máximo (100)
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, kinematics.numpad_vector(8, 100))
+            self.assertLessEqual(max(abs(w) for w in self.world.wheels), kinematics.HARD_MAX_PWM)
+            await c.send(type='drive', key=5)
+
+    async def test_raw_motor_commands_never_pass_the_pwm_ceiling(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            await c.send(type='move', m1=255, m2=-255, m3=200)
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, (kinematics.HARD_MAX_PWM, -kinematics.HARD_MAX_PWM, kinematics.HARD_MAX_PWM))
+            await c.send(type='move', m1=0, m2=0, m3=0)
+
+    async def test_repeated_identical_commands_do_not_flood_the_serial(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('sensor_data')
+            sim = self.server.robot.serial_port
+            antes = len(sim.received)
+            for _ in range(12):  # o botão segurado repete a cada 0,15 s
+                await c.send(type='drive', key=8, speed=60, hold=True)
+                await asyncio.sleep(0.05)
+            escritos = len(sim.received) - antes
+            self.assertLessEqual(escritos, 3, f"{escritos} escritas para o mesmo comando")
+            self.assertEqual(self.world.wheels, kinematics.numpad_vector(8, 60))
+            await c.send(type='drive', key=5)
+
+    async def test_calibration_is_sent_on_connect_and_changes_live(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            cal = await c.wait_for('calibration')
+            self.assertEqual(cal['ganhos'], list(kinematics.DEFAULT_GAINS))
+            self.assertEqual(cal['limites']['pwm_min_base'], 50)
+            self.assertEqual(cal['limites']['pwm_max_base'], 100)
+            await c.send(type='set_calibration', ganhos=[1.2, 1.9, 1.0], correcao_lateral=0.05)
+            novo = await c.wait_for('calibration', lambda m: m['ganhos'] == [1.2, 1.9, 1.0])
+            self.assertEqual(novo['correcao_lateral'], 0.05)
+            # a nova calibração já vale no próximo movimento e fica gravada no arquivo
+            await c.send(type='drive', key=6, speed=60)
+            await asyncio.sleep(0.15)
+            self.assertEqual(self.world.wheels, kinematics.numpad_vector(6, 60, kinematics.Calibration(
+                ganhos=[1.2, 1.9, 1.0], correcao_lateral=0.05)))
+            self.assertEqual(kinematics.Calibration.load().ganhos, [1.2, 1.9, 1.0])
+            await c.send(type='drive', key=5)
+            await c.send(type='reset_calibration')
+            volta = await c.wait_for('calibration', lambda m: m['ganhos'] == list(kinematics.DEFAULT_GAINS))
+            self.assertEqual(volta['correcao_lateral'], 0.0)
+
+    async def test_invalid_calibration_is_refused_and_the_screen_gets_the_valid_one_back(self):
+        async with self.connect() as ws:
+            c = Client(ws)
+            await c.wait_for('calibration')
+            await c.send(type='set_calibration', ganhos=[1.0, 3.0, 1.0])  # mais de 2:1 entre motores
+            erro = await c.wait_for('calibration_error')
+            self.assertIn('2', erro['error'])
+            atual = await c.wait_for('calibration')
+            self.assertEqual(atual['ganhos'], list(kinematics.DEFAULT_GAINS))
+            self.assertEqual(self.server.robot.calibration.ganhos, list(kinematics.DEFAULT_GAINS))
+
+    async def test_direction_change_brake_is_proportional_to_the_speed(self):
+        async def tempo_para_virar(level):
+            async with self.connect() as ws:
+                c = Client(ws)
+                await c.wait_for('sensor_data')
+                await c.send(type='drive', key=8, speed=level)
+                await asyncio.sleep(0.2)
+                alvo = kinematics.numpad_vector(4, level)
+                t0 = time.monotonic()
+                await c.send(type='drive', key=4, speed=level)  # troca de direção: freia e vira
+                while self.world.wheels != alvo and time.monotonic() - t0 < 2:
+                    await asyncio.sleep(0.01)
+                dt = time.monotonic() - t0
+                await c.send(type='drive', key=5)
+                await asyncio.sleep(0.1)
+                return dt
+        lento, rapido = await tempo_para_virar(60), await tempo_para_virar(100)
+        self.assertLess(lento, 0.6)  # bem menos que o 1 s antigo
+        self.assertGreater(rapido, lento * 1.2)  # mais rápido de PWM = freada mais longa, na proporção
+        ref = rac.DIRECTION_BRAKE_S * max(abs(v) for v in kinematics.numpad_vector(8, 60)) / rac.DIRECTION_BRAKE_REF_PWM
+        self.assertAlmostEqual(lento, ref, delta=0.15)
 
     async def test_voice_command_moves_then_stops(self):
         async with self.connect() as ws:

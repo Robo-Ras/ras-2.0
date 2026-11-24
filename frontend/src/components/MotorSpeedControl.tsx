@@ -31,8 +31,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
               <Slider
                 value={[motor1]}
                 onValueChange={(value) => setMotor1(value[0])}
-                min={-255}
-                max={255}
+                min={-167}
+                max={167}
                 step={1}
                 className="flex-1"
               />
@@ -42,8 +42,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
             </div>
             <Input
               type="number"
-              min="-255"
-              max="255"
+              min="-167"
+              max="167"
               value={motor1}
               onChange={(e) => setMotor1(Number(e.target.value))}
               placeholder="0"
@@ -59,8 +59,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
               <Slider
                 value={[motor2]}
                 onValueChange={(value) => setMotor2(value[0])}
-                min={-255}
-                max={255}
+                min={-167}
+                max={167}
                 step={1}
                 className="flex-1"
               />
@@ -70,8 +70,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
             </div>
             <Input
               type="number"
-              min="-255"
-              max="255"
+              min="-167"
+              max="167"
               value={motor2}
               onChange={(e) => setMotor2(Number(e.target.value))}
               placeholder="0"
@@ -87,8 +87,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
               <Slider
                 value={[motor3]}
                 onValueChange={(value) => setMotor3(value[0])}
-                min={-255}
-                max={255}
+                min={-167}
+                max={167}
                 step={1}
                 className="flex-1"
               />
@@ -98,8 +98,8 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
             </div>
             <Input
               type="number"
-              min="-255"
-              max="255"
+              min="-167"
+              max="167"
               value={motor3}
               onChange={(e) => setMotor3(Number(e.target.value))}
               placeholder="0"
@@ -120,7 +120,7 @@ const MotorSpeedControl = ({ onSendCommand }: MotorSpeedControlProps) => {
 
       <div className="text-sm text-muted-foreground text-center">
         <p>Controle direto dos motores</p>
-        <p>Digite valores de -255 a 255 para cada motor</p>
+        <p>Valores de -167 a 167 (o sistema limita em 167; acima de 100 só em velocidade alta). Abaixo de 50 o motor não gira</p>
       </div>
     </div>
   );

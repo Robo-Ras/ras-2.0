@@ -1,38 +1,48 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, OctagonX, RotateCcw, RotateCw, VideoOff } from "lucide-react";
+import {
+  ArrowDown, ArrowDownLeft, ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpLeft, ArrowUpRight,
+  OctagonX, RotateCcw, RotateCw, VideoOff,
+} from "lucide-react";
 import { Slider } from "@/components/ui/slider";
-import { driveVector, type Direction } from "@/lib/drive";
+import { DRIVE_KEY_LABELS, SPEED_DEFAULT, SPEED_MAX, SPEED_MIN, clampSpeed, type DriveKey } from "@/lib/drive";
 import { getWsUrl } from "@/lib/ws";
 
-// Controle pelo celular: só os botões de movimento. Segure para andar, solte para parar.
-// Enquanto o dedo está na tela o comando é repetido; o backend para o robô se ele deixar de chegar.
+// Controle pelo celular: as 8 direções (disposição do teclado numérico) e o giro. Segure para andar, solte para
+// frear. Só a tecla vai para o backend ("só o valor"); ele calcula os motores. Enquanto o dedo está na tela o
+// comando é repetido; o backend corta os motores se ele deixar de chegar.
 const REPEAT_MS = 150;
 const SPEED_KEY = "ras-controle-speed";
 
 const loadSpeed = () => {
   try {
     const saved = Number(localStorage.getItem(SPEED_KEY));
-    if (saved >= 20 && saved <= 255) return saved;
+    if (saved) return clampSpeed(saved); // valores de versões antigas (20 a 255) entram na faixa 60-100
   } catch {
     // sem localStorage (modo privado): usa o padrão
   }
-  return 60;
+  return SPEED_DEFAULT;
 };
 
 type Link = "connecting" | "online" | "offline";
+
+const DIRECTION_ICONS: Record<number, JSX.Element> = {
+  7: <ArrowUpLeft className="h-7 w-7" />, 8: <ArrowUp className="h-7 w-7" />, 9: <ArrowUpRight className="h-7 w-7" />,
+  4: <ArrowLeft className="h-7 w-7" />, 6: <ArrowRight className="h-7 w-7" />,
+  1: <ArrowDownLeft className="h-7 w-7" />, 2: <ArrowDown className="h-7 w-7" />, 3: <ArrowDownRight className="h-7 w-7" />,
+};
 
 const Controle = () => {
   const [link, setLink] = useState<Link>("connecting");
   const [arduino, setArduino] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [speed, setSpeed] = useState(loadSpeed);
-  const [active, setActive] = useState<Direction | null>(null);
+  const [active, setActive] = useState<DriveKey | null>(null);
   const [frame, setFrame] = useState<string | null>(null); // preview da câmera (JPEG em base64)
 
   const wsRef = useRef<WebSocket | null>(null);
   const speedRef = useRef(speed);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
-  const holdingRef = useRef<Direction | null>(null);
+  const holdingRef = useRef<DriveKey | null>(null);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -59,20 +69,19 @@ const Controle = () => {
     timerRef.current = undefined;
     holdingRef.current = null;
     setActive(null);
-    send({ type: "move", m1: 0, m2: 0, m3: 0, soft });
-    send({ type: "move", m1: 0, m2: 0, m3: 0, soft });
+    send({ type: "drive", key: 5, soft }); // 5 = parar (o teclado numérico)
+    send({ type: "drive", key: 5, soft });
   }, [send]);
 
   const start = useCallback(
-    (direction: Direction) => {
-      if (holdingRef.current === direction) return;
+    (key: DriveKey) => {
+      if (holdingRef.current === key) return;
       clearInterval(timerRef.current);
-      holdingRef.current = direction;
-      setActive(direction);
+      holdingRef.current = key;
+      setActive(key);
       const tick = () => {
-        const [m1, m2, m3] = driveVector(direction, speedRef.current);
         // sem conexão: não segura o botão "ativo" à toa
-        if (!send({ type: "move", m1, m2, m3, hold: true })) stop();
+        if (!send({ type: "drive", key, speed: speedRef.current, hold: true })) stop();
       };
       tick();
       timerRef.current = setInterval(tick, REPEAT_MS);
@@ -151,7 +160,7 @@ const Controle = () => {
     };
   }, [stop]);
 
-  const holdProps = (direction: Direction) => ({
+  const holdProps = (direction: DriveKey) => ({
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId);
       start(direction);
@@ -162,7 +171,7 @@ const Controle = () => {
     onContextMenu: (e: React.SyntheticEvent) => e.preventDefault(),
   });
 
-  const padClass = (direction: Direction) =>
+  const padClass = (direction: DriveKey) =>
     `flex aspect-square w-full select-none items-center justify-center rounded-xl border text-foreground transition-colors disabled:opacity-40 ${
       active === direction ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card active:bg-accent"
     }`;
@@ -215,36 +224,38 @@ const Controle = () => {
       )}
 
       <main className="flex flex-1 flex-col justify-center gap-3 px-4 py-3">
+        {/* Mesma disposição do teclado numérico: 7 8 9 / 4 5 6 / 1 2 3, e o 5 para */}
         <div className="mx-auto grid w-full max-w-[236px] grid-cols-3 gap-2">
-          <button disabled={disabled} className={padClass("counterclockwise")} aria-label="Girar anti-horário" {...holdProps("counterclockwise")}>
-            <RotateCcw className="h-6 w-6" />
+          {([7, 8, 9, 4, 5, 6, 1, 2, 3] as DriveKey[]).map((key) =>
+            key === 5 ? (
+              <button
+                key={key}
+                disabled={disabled}
+                onPointerDown={() => stop(false)}
+                className="flex aspect-square w-full items-center justify-center rounded-xl border border-destructive/50 bg-destructive/15 text-xs font-bold tracking-wide text-destructive active:bg-destructive/30 disabled:opacity-40"
+              >
+                PARE
+              </button>
+            ) : (
+              <button
+                key={key}
+                disabled={disabled}
+                className={padClass(key)}
+                aria-label={DRIVE_KEY_LABELS[key]}
+                {...holdProps(key)}
+              >
+                {DIRECTION_ICONS[key as number]}
+              </button>
+            ),
+          )}
+        </div>
+        <div className="mx-auto grid w-full max-w-[236px] grid-cols-2 gap-2">
+          <button disabled={disabled} className={`${padClass("ccw")} !aspect-auto h-11`} aria-label="Girar anti-horário" {...holdProps("ccw")}>
+            <RotateCcw className="h-5 w-5" />
           </button>
-          <button disabled={disabled} className={padClass("forward")} aria-label="Frente" {...holdProps("forward")}>
-            <ArrowUp className="h-8 w-8" />
+          <button disabled={disabled} className={`${padClass("cw")} !aspect-auto h-11`} aria-label="Girar horário" {...holdProps("cw")}>
+            <RotateCw className="h-5 w-5" />
           </button>
-          <button disabled={disabled} className={padClass("clockwise")} aria-label="Girar horário" {...holdProps("clockwise")}>
-            <RotateCw className="h-6 w-6" />
-          </button>
-
-          <button disabled={disabled} className={padClass("left")} aria-label="Esquerda" {...holdProps("left")}>
-            <ArrowLeft className="h-8 w-8" />
-          </button>
-          <button
-            disabled={disabled}
-            onPointerDown={() => stop(false)}
-            className="flex aspect-square w-full items-center justify-center rounded-xl border border-destructive/50 bg-destructive/15 text-xs font-bold tracking-wide text-destructive active:bg-destructive/30 disabled:opacity-40"
-          >
-            PARE
-          </button>
-          <button disabled={disabled} className={padClass("right")} aria-label="Direita" {...holdProps("right")}>
-            <ArrowRight className="h-8 w-8" />
-          </button>
-
-          <div />
-          <button disabled={disabled} className={padClass("backward")} aria-label="Trás" {...holdProps("backward")}>
-            <ArrowDown className="h-8 w-8" />
-          </button>
-          <div />
         </div>
 
         <div className="space-y-1.5 rounded-xl border border-border bg-card px-3 py-2">
@@ -252,7 +263,7 @@ const Controle = () => {
             <span className="font-medium">Velocidade</span>
             <span className="tabular text-sm font-semibold">{speed}</span>
           </div>
-          <Slider value={[speed]} onValueChange={(v) => setSpeed(v[0])} min={20} max={255} step={5} />
+          <Slider value={[speed]} onValueChange={(v) => setSpeed(v[0])} min={SPEED_MIN} max={SPEED_MAX} step={5} />
         </div>
 
         <p className="text-center text-[11px] text-muted-foreground">Segure para andar; ao soltar o robô freia e para.</p>
